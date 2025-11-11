@@ -2,6 +2,10 @@ import pyrealsense2 as rs
 import numpy as np
 import cv2
 
+import dv_processing as dv
+
+print(dv.__version__)
+
 pipe = rs.pipeline()
 cfg = rs.config()
 
