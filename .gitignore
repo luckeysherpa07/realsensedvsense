@@ -1,0 +1,10 @@
+# Ignore Python virtual environment folder
+realsensedvsense/
+
+# Ignore Python bytecode and cache directories
+camera_feature/__pycache__/
+
+# (Optional) Common Python ignores for safety
+*.pyc
+*.pyo
+__pycache__/
