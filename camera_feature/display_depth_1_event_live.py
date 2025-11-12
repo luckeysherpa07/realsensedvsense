@@ -35,25 +35,22 @@ def run():
     camera.start()
     camera.set_batch_events_time(10000)  # 10 ms batch for event camera
 
+    #Initializing timestamp as 0 for both event and depth
+    start_event_timestamp = None
+    start_depth_timestamp = None
+
     try:
         while True:
             # RealSense frame acquisition
             frames = pipe.wait_for_frames()
             depth_frame = frames.get_depth_frame()
-            color_frame = frames.get_color_frame()
 
             # Get timestamps for RealSense Depth Camera
             depth_timestamps = depth_frame.get_timestamp()
-            color_timestamps = color_frame.get_timestamp()
             print(f"Depth frame timestamp: {depth_timestamps} ms")
-            print(f"Color frame timestamp: {color_timestamps} ms")
-
-            if not depth_frame or not color_frame:
-                continue
 
             #Mapping the value for Depth Camera
             depth_image = np.asanyarray(depth_frame.get_data())
-            color_image = np.asanyarray(color_frame.get_data())
             depth_cm = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.5), cv2.COLORMAP_JET)
 
 
@@ -80,7 +77,6 @@ def run():
             canvas[off_histogram > 0] = color_coding['off']
 
             # Display all windows side by side
-            cv2.imshow('RealSense RGB', color_image)
             cv2.imshow('RealSense Depth', depth_cm)
             cv2.imshow('DVSense Events', canvas)
 
