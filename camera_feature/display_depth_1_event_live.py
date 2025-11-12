@@ -41,6 +41,12 @@ def run():
             frames = pipe.wait_for_frames()
             depth_frame = frames.get_depth_frame()
             color_frame = frames.get_color_frame()
+
+            # Get timestamps
+            depth_ts = depth_frame.get_timestamp()
+            color_ts = color_frame.get_timestamp()
+            print(f"Depth frame timestamp: {depth_ts} ms, Color frame timestamp: {color_ts} ms")
+
             if not depth_frame or not color_frame:
                 continue
 
@@ -48,8 +54,16 @@ def run():
             color_image = np.asanyarray(color_frame.get_data())
             depth_cm = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.5), cv2.COLORMAP_JET)
 
+
             # DVSense event frame acquisition
             events = camera.get_next_batch()
+
+            # Extract timestamps as a NumPy array
+            timestamps = events['timestamp']  # or events['timestamp'] depending on SDK
+            # Example: print the first 10 timestamps
+            print("First 10 event timestamps:", timestamps[:10])
+
+
             histogram = torch.zeros((2, height, width), dtype=torch.long)
             x_coords = torch.tensor(events['x'].astype(np.int32), dtype=torch.long)
             y_coords = torch.tensor(events['y'].astype(np.int32), dtype=torch.long)
