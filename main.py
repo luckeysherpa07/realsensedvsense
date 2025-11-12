@@ -1,10 +1,12 @@
 from camera_feature import display_depth_1_live
 from camera_feature import display_event_live
+from camera_feature import display_depth_1_event_live
 
 def main():
     options = {
         "1": ("Display Depth 1 Live", display_depth_1_live.run),
         "2": ("Display Event Live", display_event_live.run),
+        "3": ("Display Depth 1 and Event Live", display_depth_1_event_live.run),
     }
 
     while True:
