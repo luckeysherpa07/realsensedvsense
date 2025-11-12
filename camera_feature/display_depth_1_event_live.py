@@ -46,8 +46,8 @@ def run():
             depth_frame = frames.get_depth_frame()
 
             # Get timestamps for RealSense Depth Camera
-            depth_timestamps = depth_frame.get_timestamp()
-            print(f"Depth frame timestamp: {depth_timestamps} ms")
+            depth_timestamp = depth_frame.get_timestamp()
+            print(f"Depth frame timestamp: {depth_timestamp} ms")
 
             #Mapping the value for Depth Camera
             depth_image = np.asanyarray(depth_frame.get_data())
@@ -76,6 +76,31 @@ def run():
             canvas[on_histogram > 0] = color_coding['on']
             canvas[off_histogram > 0] = color_coding['off']
 
+            #################################
+            # Logic to align timestamp from event and depth
+
+            # Initialize references at start (first iteration)
+            if start_event_timestamp is None:
+                start_event_timestamp = event_timestamps[0]      # μs - batch's first event
+            if start_depth_timestamp is None:
+                start_depth_timestamp = depth_timestamp          # ms
+
+
+            # Convert depth timestamp to μs (scalar)
+            depth_timestamp_us = depth_timestamp * 1000
+            start_depth_timestamp_us = start_depth_timestamp * 1000
+
+            # Align (synchronize) timestamps
+            aligned_event_timestamps = event_timestamps - start_event_timestamp    # array, μs
+            aligned_depth_timestamp = depth_timestamp_us - start_depth_timestamp_us # scalar, μs
+
+            # Optional: print results for debugging
+            print("........................")
+            print("Aligned first 10 event timestamps (μs):", aligned_event_timestamps[:10])
+            print("Aligned depth frame timestamp (μs):", aligned_depth_timestamp)
+            print("........................")
+
+            ##################################
             # Display all windows side by side
             cv2.imshow('RealSense Depth', depth_cm)
             cv2.imshow('DVSense Events', canvas)
