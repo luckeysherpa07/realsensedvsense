@@ -1,17 +1,25 @@
 from camera_feature import display_depth_1_live
+from camera_feature import display_event_live
 
 def main():
+    options = {
+        "1": ("Display Depth 1 Live", display_depth_1_live.run),
+        "2": ("Display Event Live", display_event_live.run),
+    }
+
     while True:
         print("\nChoose an option:")
-        print("1. Display Depth 1 Live")
+        for key, (description, _) in options.items():
+            print(f"{key}. {description}")
         print("0. Exit")
+
         choice = input("Enter the number: ").strip()
-        if choice == "1":
-            print("\nRunning Display Depth 1 Live...\n")
-            display_depth_1_live.run()
-        elif choice == "0":
+        if choice == "0":
             print("Exiting...")
             break
+        elif choice in options:
+            print(f"\nRunning {options[choice][0]}...\n")
+            options[choice][1]()  # Call the function
         else:
             print("Invalid choice!")
 
