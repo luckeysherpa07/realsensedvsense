@@ -51,7 +51,7 @@ def run():
 
             #Mapping the value for Depth Camera
             depth_image = np.asanyarray(depth_frame.get_data())
-            depth_cm = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.5), cv2.COLORMAP_JET)
+            depth_canvas = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.5), cv2.COLORMAP_JET)
 
 
             ###############################
@@ -71,10 +71,10 @@ def run():
                 histogram, (polarities, y_coords, x_coords), torch.ones_like(x_coords), accumulate=False
             )
             off_histogram, on_histogram = histogram.cpu().numpy()
-            canvas = np.zeros((height, width, 3), dtype=np.uint8)
-            canvas[:, :] = color_coding['bg']
-            canvas[on_histogram > 0] = color_coding['on']
-            canvas[off_histogram > 0] = color_coding['off']
+            event_canvas = np.zeros((height, width, 3), dtype=np.uint8)
+            event_canvas[:, :] = color_coding['bg']
+            event_canvas[on_histogram > 0] = color_coding['on']
+            event_canvas[off_histogram > 0] = color_coding['off']
 
             #################################
             # Logic to align timestamp from event and depth
@@ -102,8 +102,8 @@ def run():
 
             ##################################
             # Display all windows side by side
-            cv2.imshow('RealSense Depth', depth_cm)
-            cv2.imshow('DVSense Events', canvas)
+            cv2.imshow('RealSense Depth', depth_canvas)
+            cv2.imshow('DVSense Events', event_canvas)
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
