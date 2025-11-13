@@ -1,102 +1,122 @@
+# Copyright (c) Prophesee S.A.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+# on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and limitations under the License.
+
+"""
+This application demonstrates how to use Metavision SDK Stream module to slice events from a camera
+"""
+
 import numpy as np
-import cv2
-import torch
-from dvsense_driver.camera_manager import DvsCameraManager
+
+from metavision_sdk_core import BaseFrameGenerationAlgorithm
+from metavision_sdk_stream import Camera, CameraStreamSlicer, FileConfigHints, SliceCondition
+from metavision_sdk_ui import MTWindow, BaseWindow, EventLoop, UIAction, UIKeyEvent
+
+
+def parse_args():
+    """
+    Parse command line arguments
+    """
+    import argparse
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Code sample showing how to use the Metavision CameraStreamSlicer to slice the events from a camera"
+            " or a file into slices of a fixed number of events or a fixed duration."))
+
+    # Base options
+    parser.add_argument(
+        '-i', '--input-event-file',
+        help="Path to input event file (RAW or HDF5). If not specified, the camera live stream is used.")
+    parser.add_argument('-s', '--camera-serial-number',
+                        help="Serial number of the camera to be used")
+    parser.add_argument('-r', '--real-time-playback', action="store_true",
+                        help="Flag to play record at recording speed")
+
+    # Slicing options
+    parser.add_argument('-m', '--slicing-mode', type=str,
+                        choices=['N_EVENTS', 'N_US', 'MIXED'],
+                        default='N_US', help="Slicing mode (i.e. N_EVENTS, N_US, MIXED)")
+    parser.add_argument('-t', '--delta-ts', type=int, default=10000,
+                        help="Slice duration in microseconds (default=10000us)")
+    parser.add_argument('-n', '--delta-n-events', type=int, default=100000,
+                        help="Number of events in a slice (default=100000)")
+
+    args = parser.parse_args()
+
+    if args.slicing_mode == 'IDENTITY':
+        args.slice_condition = SliceCondition.make_identity()
+    elif args.slicing_mode == 'N_EVENTS':
+        args.slice_condition = SliceCondition.make_n_events(args.delta_n_events)
+    elif args.slicing_mode == 'N_US':
+        args.slice_condition = SliceCondition.make_n_us(args.delta_ts)
+    elif args.slicing_mode == 'MIXED':
+        args.slice_condition = SliceCondition.make_mixed(args.delta_ts, args.delta_n_events)
+    else:
+        raise ValueError(f"Invalid slicing mode: {args.slicing_mode}")
+
+    return args
+
+
+def build_slicer(args):
+    """
+    Build the CameraStreamSlicer from the command line arguments
+
+    Args:
+        args: Command line arguments
+
+    Returns: The CameraStreamSlicer instance
+    """
+    # [CAMERA_INIT_BEGIN]
+    if args.camera_serial_number:
+        camera = Camera.from_serial(args.camera_serial_number)
+    elif args.input_event_file:
+        hints = FileConfigHints()
+        hints.real_time_playback(args.real_time_playback)
+        camera = Camera.from_file(args.input_event_file, hints)
+    else:
+        camera = Camera.from_first_available()
+    # [CAMERA_INIT_END]
+
+    # [SLICER_INIT_BEGIN]
+    slicer = CameraStreamSlicer(camera.move(), args.slice_condition)
+    # [SLICER_INIT_END]
+
+    return slicer
 
 
 def run():
-    # Initialize camera manager
-    dvs_camera_manager = DvsCameraManager()
-    dvs_camera_manager.update_cameras()
+    args = parse_args()
+    slicer = build_slicer(args)
+    width = slicer.camera().width()
+    height = slicer.camera().height()
+    frame = np.zeros((height, width, 3), np.uint8)
 
-    # Get camera descriptions
-    camera_descriptions = dvs_camera_manager.get_camera_descs()
-    print(camera_descriptions)
+    with MTWindow(title="Metavision Events Viewer", width=width, height=height,
+                  mode=BaseWindow.RenderMode.BGR) as window:
+        def keyboard_cb(key, scancode, action, mods):
+            if key == UIKeyEvent.KEY_ESCAPE or key == UIKeyEvent.KEY_Q:
+                window.set_close_flag()
 
-    # Check if any cameras are available
-    if not camera_descriptions:
-        print("No camera found. Exiting...")
-        exit(0)
+        window.set_keyboard_callback(keyboard_cb)
 
-    # Print all camera description information
-    for camera_desc in camera_descriptions:
-        print(camera_desc)
+        # [SLICER_LOOP_BEGIN]
+        for slice in slicer:
+            EventLoop.poll_and_dispatch()
 
-    # Open the first available camera
-    try:
-        camera = dvs_camera_manager.open_camera(camera_descriptions[0].serial)
-    except Exception as e:
-        print(f"Failed to open camera: {e}")
-        exit(1)
+            print(f"ts: {slice.t}, new slice of {slice.events.size} events")
 
-    # Print camera information
-    print(camera)
+            BaseFrameGenerationAlgorithm.generate_frame(slice.events, frame)
+            window.show_async(frame)
 
-    # Get camera width and height
-    width = camera.get_width()
-    height = camera.get_height()
-
-    # Define color coding dictionary
-    COLOR_CODING: dict = {
-        'blue_red': {
-            'on': [0, 0, 255],
-            'off': [255, 0, 0],
-            'bg': [0, 0, 0]
-        },
-        'blue_white': {
-            'on': [216, 223, 236],
-            'off': [201, 126, 64],
-            'bg': [0, 0, 0]
-        }
-    }
-
-    # Start the camera and set batch event duration
-    camera.start()
-    camera.set_batch_events_time(10000)  # Set batch duration to 10 milliseconds
-
-    # Display event stream in real time
-    while True:
-        # Get event data
-        events = camera.get_next_batch()
-
-        # Initialize data
-        histogram = torch.zeros((2, height, width), dtype=torch.long)
-
-        # Extract event x, y coordinates and polarity
-        x_coords: torch.Tensor = torch.tensor(events['x'].astype(np.int32), dtype=torch.long)
-        y_coords: torch.Tensor = torch.tensor(events['y'].astype(np.int32), dtype=torch.long)
-        polarities: torch.Tensor = torch.tensor(events['polarity'].astype(np.int32), dtype=torch.long)
-
-        # Update data
-        torch.index_put_(
-            histogram, (polarities, y_coords, x_coords), torch.ones_like(x_coords), accumulate=False
-        )
-        _, hist_height, hist_width = histogram.shape
-
-        # Define color coding
-        color_coding: dict = COLOR_CODING['blue_white']
-
-        # Initialize canvas
-        canvas = np.zeros((hist_height, hist_width, 3), dtype=np.uint8)
-        canvas[:, :] = color_coding['bg']
-
-        # Convert data to NumPy arrays
-        off_histogram, on_histogram = histogram.cpu().numpy()
-
-        # Update canvas color based on event polarity
-        canvas[on_histogram > 0] = color_coding['on']
-        canvas[off_histogram > 0] = color_coding['off']
-
-        # Display event image
-        cv2.imshow('events', canvas)
-
-        # Press 'q' to exit the loop
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    # Release resources
-    cv2.destroyAllWindows()
-    camera.stop()
+            if window.should_close():
+                break
+        # [SLICER_LOOP_END]
 
 
 if __name__ == "__main__":
