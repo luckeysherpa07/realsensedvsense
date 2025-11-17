@@ -2,7 +2,8 @@ from camera_feature import display_depth_1_live
 from camera_feature import display_event_live
 from camera_feature import display_event_live_dvsense_drive
 from camera_feature import display_depth_1_event_live
-from camera_feature import display_calibration_info
+from camera_feature import display_event_intrinsics
+from camera_feature import display_depth_intrinsics
 
 def main():
     options = {
@@ -10,7 +11,8 @@ def main():
         "2": ("Display Event Live", display_event_live.run),
         "3": ("Display Event Live from DVSense Driver", display_event_live_dvsense_drive.run),
         "4": ("Display Depth 1 and Event Live", display_depth_1_event_live.run),
-        "5": ("Display Calibration Info", display_calibration_info.run),
+        "5": ("Display Event Intrinsics", display_event_intrinsics.run),
+        "6": ("Display Depth Intrinsics", display_depth_intrinsics.run),
     }
 
     while True:
