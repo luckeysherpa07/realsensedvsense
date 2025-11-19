@@ -99,7 +99,6 @@ def run():
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
                 cv2.imwrite(f"detected_view_{collected_views}.png", vis_frame)
 
-                cv2.imshow("Detected Circles", vis_frame)
                 cv2.waitKey(500)  # brief pause to show detection
 
                 if collected_views >= total_views:
