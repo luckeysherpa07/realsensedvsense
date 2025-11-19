@@ -46,8 +46,8 @@ def run():
     total_views = 20
 
     # Motion detection thresholds
-    MOTION_HIGH = 5000
-    MOTION_LOW = 2000
+    MOTION_HIGH = 15000000
+    MOTION_LOW = 8000000
     prev_accum = None
     detection_enabled = False
 
@@ -79,6 +79,8 @@ def run():
 
             motion = np.sum(cv2.absdiff(process_frame, prev_accum))
             prev_accum = process_frame
+
+            print("MotionHIGH:", motion)
 
             # Enable detection if motion is high
             if not detection_enabled and motion > MOTION_HIGH:
