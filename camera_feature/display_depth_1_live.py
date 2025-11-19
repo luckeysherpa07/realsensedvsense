@@ -8,6 +8,7 @@ def run():
 
     cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
     cfg.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+    cfg.enable_stream(rs.stream.infrared, 640, 480, rs.format.y8, 30)
 
     pipe.start(cfg)
 
@@ -15,13 +16,17 @@ def run():
         frame = pipe.wait_for_frames()
         depth_frame = frame.get_depth_frame()
         color_frame = frame.get_color_frame()
+        ir_frame = frame.get_infrared_frame(1)  # index 1
+
 
         depth_image = np.asanyarray(depth_frame.get_data())
         color_image = np.asanyarray(color_frame.get_data())
+        ir_image = np.asanyarray(ir_frame.get_data())
         depth_cm = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha = 0.5), cv2.COLORMAP_JET)
 
         cv2.imshow('rgb', color_image)
         cv2.imshow('depth', depth_cm)
+        cv2.imshow('ir', ir_image)
 
         if cv2.waitKey(1) == ord('q'):
             break
