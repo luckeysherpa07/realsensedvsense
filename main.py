@@ -14,7 +14,7 @@ def main():
         "4": ("Display Depth 1 and Event Live", display_depth_1_event_live.run),
         "5": ("Display Event Intrinsics", display_event_intrinsics.run),
         "6": ("Display Depth Intrinsics", display_depth_intrinsics.run),
-        "6": ("Display Stereo Calibration", display_stereo_calibration.run),
+        "7": ("Display Stereo Calibration", display_stereo_calibration.run),
     }
 
     while True:

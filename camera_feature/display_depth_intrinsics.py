@@ -3,16 +3,17 @@ import numpy as np
 import cv2
 
 def run():
-    # RealSense RGB setup
+    # RealSense IR setup
     pipe = rs.pipeline()
     cfg = rs.config()
+
     width, height = 640, 480
-    cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, 30)
+    cfg.enable_stream(rs.stream.infrared, 1, width, height, rs.format.y8, 30)
     pipe.start(cfg)
 
     # Calibration pattern
     grid_rows, grid_cols = 4, 5
-    spacing = 0.05
+    spacing = 3.7
     board_size = (grid_cols, grid_rows)
 
     objp = np.zeros((grid_rows * grid_cols, 3), np.float32)
@@ -31,16 +32,17 @@ def run():
     MOTION_HIGH = 800_000
     MOTION_LOW  = 600_000
 
-    print("Move the 5x4 circle grid in front of the RGB camera...")
+    print("Move the 5x4 circle grid in front of the **Infrared Camera**...")
 
     while True:
         frames = pipe.wait_for_frames()
-        color_frame = frames.get_color_frame()
-        if not color_frame:
+        ir_frame = frames.get_infrared_frame(1)
+        if not ir_frame:
             continue
 
-        color_img = np.asanyarray(color_frame.get_data())
-        gray = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
+        # IR frame comes already in grayscale
+        ir_img = np.asanyarray(ir_frame.get_data())
+        gray = ir_img.copy()
 
         if prev_gray is None:
             prev_gray = gray
@@ -62,20 +64,20 @@ def run():
             )
             if ret:
                 collected += 1
-                print(f"Captured view {collected}/{needed}")
+                print(f"Captured IR view {collected}/{needed}")
                 img_points.append(centers)
                 object_points.append(objp)
 
-                display = color_img.copy()
+                display = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
                 cv2.drawChessboardCorners(display, board_size, centers, ret)
-                cv2.imwrite(f"rgb_view_{collected}.png", display)
-                cv2.imshow("RGB Calibration View", display)
-                cv2.waitKey(500)  # short pause to see the captured frame
+                cv2.imwrite(f"ir_view_{collected}.png", display)
+                cv2.imshow("IR Calibration View", display)
+                cv2.waitKey(500)
 
-                detection_enabled = False  # wait for next motion
+                detection_enabled = False
 
         prev_gray = gray
-        cv2.imshow("RGB Calibration View", color_img)
+        cv2.imshow("IR Calibration View", gray)
 
         if cv2.waitKey(1) == ord('q'):
             break
@@ -86,15 +88,16 @@ def run():
     cv2.destroyAllWindows()
 
     # Calibrate
-    print("\n=== Calibrating RGB camera ===")
+    print("\n=== Calibrating **Infrared** camera ===")
     ret, K, dist, rvecs, tvecs = cv2.calibrateCamera(
         object_points, img_points, (width, height), None, None
     )
-    print("\n=== INTRINSIC MATRIX (K) ===")
+
+    print("\n=== IR INTRINSIC MATRIX (K) ===")
     print(K)
-    print("\n=== DISTORTION COEFFICIENTS ===")
+    print("\n=== IR DISTORTION COEFFICIENTS ===")
     print(dist)
-    print("\nCalibration complete!")
+    print("\nIR Calibration complete!")
 
 if __name__ == "__main__":
     run()
