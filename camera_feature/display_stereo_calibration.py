@@ -12,10 +12,10 @@ def run():
     BOARD_SIZE = (GRID_COLS, GRID_ROWS)
     SPACING = 3.7  # 3.7 cm
 
-    SLICES_PER_FRAME = 2        # << Faster
+    SLICES_PER_FRAME = 2
     TOTAL_VIEWS = 20
 
-    DS = 0.5                    # Downscale factor
+    DS = 0.5  # Downscale factor
 
     # ----------------------------------------------------------
 
@@ -37,11 +37,11 @@ def run():
     params.maxArea = 5000
     detector = cv2.SimpleBlobDetector_create(params)
 
-    # ------------------------- Initialize RGB Camera -------------------------
+    # ------------------------- Initialize Infrared Camera -------------------------
     pipe = rs.pipeline()
     cfg = rs.config()
-    rgb_width, rgb_height = 640, 480
-    cfg.enable_stream(rs.stream.color, rgb_width, rgb_height, rs.format.bgr8, 30)
+    ir_width, ir_height = 640, 480
+    cfg.enable_stream(rs.stream.infrared, 1, ir_width, ir_height, rs.format.y8, 30)  # stream 1 is IR1
     pipe.start(cfg)
 
     # ------------------------- Prepare Object Points -------------------------
@@ -51,7 +51,7 @@ def run():
 
     object_points = []
     img_points_event = []
-    img_points_rgb = []
+    img_points_ir = []
 
     collected_views = 0
     print(f"Collecting {TOTAL_VIEWS} synchronized views... Move the grid slowly!")
@@ -99,53 +99,54 @@ def run():
             blobDetector=detector
         )
 
-        # -------------------- RGB camera poll_for_frames --------------------
+        # -------------------- IR camera poll_for_frames --------------------
         frames = pipe.poll_for_frames()
         if not frames:
-            continue  # no blocking → MUCH faster
-
-        color_frame = frames.get_color_frame()
-        if not color_frame:
             continue
 
-        color_img = np.asanyarray(color_frame.get_data())
-        gray_rgb = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
+        ir_frame = frames.get_infrared_frame(1)  # IR stream 1
+        if not ir_frame:
+            continue
 
-        # -------------------- DOWNSCALE RGB FRAME --------------------
-        small_rgb = cv2.resize(gray_rgb, None, fx=DS, fy=DS, interpolation=cv2.INTER_AREA)
+        ir_img = np.asanyarray(ir_frame.get_data())
+        # IR is already grayscale
+        gray_ir = ir_img
 
-        # Circle detection in RGB
-        ret_rgb, centers_rgb_small = cv2.findCirclesGrid(
-            small_rgb, BOARD_SIZE,
+        # -------------------- DOWNSCALE IR FRAME --------------------
+        small_ir = cv2.resize(gray_ir, None, fx=DS, fy=DS, interpolation=cv2.INTER_AREA)
+
+        # Circle detection in IR
+        ret_ir, centers_ir_small = cv2.findCirclesGrid(
+            small_ir, BOARD_SIZE,
             flags=cv2.CALIB_CB_SYMMETRIC_GRID
         )
 
         # -------------------- SYNCHRONIZED CAPTURE --------------------
-        if ret_event and ret_rgb:
+        if ret_event and ret_ir:
 
             collected_views += 1
             print(f"Captured synchronized view {collected_views}/{TOTAL_VIEWS}")
 
             # UPSCALE detected points
             centers_event = centers_event_small / DS
-            centers_rgb = centers_rgb_small / DS
+            centers_ir = centers_ir_small / DS
 
             object_points.append(objp)
             img_points_event.append(centers_event.astype(np.float32))
-            img_points_rgb.append(centers_rgb.astype(np.float32))
+            img_points_ir.append(centers_ir.astype(np.float32))
 
             # Visualization
             disp_event = cv2.cvtColor(blur_frame, cv2.COLOR_GRAY2BGR)
             cv2.drawChessboardCorners(disp_event, BOARD_SIZE, centers_event, True)
             cv2.imwrite(f"event_view_{collected_views}.png", disp_event)
 
-            disp_rgb = color_img.copy()
-            cv2.drawChessboardCorners(disp_rgb, BOARD_SIZE, centers_rgb, True)
-            cv2.imwrite(f"rgb_view_{collected_views}.png", disp_rgb)
+            disp_ir = cv2.cvtColor(gray_ir, cv2.COLOR_GRAY2BGR)
+            cv2.drawChessboardCorners(disp_ir, BOARD_SIZE, centers_ir, True)
+            cv2.imwrite(f"ir_view_{collected_views}.png", disp_ir)
 
         # Optional displays
         cv2.imshow("Event Camera (downscaled)", small_event)
-        cv2.imshow("RGB Camera (downscaled)", small_rgb)
+        cv2.imshow("IR Camera (downscaled)", small_ir)
         if cv2.waitKey(1) == ord('q'):
             break
 
@@ -163,9 +164,9 @@ def run():
         object_points, img_points_event, (width, height), None, None
     )
 
-    print("Calibrating RGB camera...")
-    ret_rgb, K_rgb, dist_rgb, _, _ = cv2.calibrateCamera(
-        object_points, img_points_rgb, (rgb_width, rgb_height), None, None
+    print("Calibrating IR camera...")
+    ret_ir, K_ir, dist_ir, _, _ = cv2.calibrateCamera(
+        object_points, img_points_ir, (ir_width, ir_height), None, None
     )
 
     # ------------------------- Stereo calibration -------------------------
@@ -173,23 +174,23 @@ def run():
     flags = cv2.CALIB_FIX_INTRINSIC
 
     ret, K1, dist1, K2, dist2, R, T, E, F = cv2.stereoCalibrate(
-        object_points, img_points_event, img_points_rgb,
-        K_event, dist_event, K_rgb, dist_rgb,
-        (max(width, rgb_width), max(height, rgb_height)),
+        object_points, img_points_event, img_points_ir,
+        K_event, dist_event, K_ir, dist_ir,
+        (max(width, ir_width), max(height, ir_height)),
         criteria=(cv2.TERM_CRITERIA_MAX_ITER + cv2.TERM_CRITERIA_EPS, 100, 1e-5),
         flags=flags
     )
 
     print("\n=== Stereo Calibration Results ===")
-    print("Rotation R (event → RGB):\n", R)
-    print("Translation T (event → RGB):\n", T)
+    print("Rotation R (event → IR):\n", R)
+    print("Translation T (event → IR):\n", T)
     print("Essential matrix E:\n", E)
     print("Fundamental matrix F:\n", F)
 
     # Rectification
     R1, R2, P1, P2, Q, roi1, roi2 = cv2.stereoRectify(
-        K_event, dist_event, K_rgb, dist_rgb,
-        (max(width, rgb_width), max(height, rgb_height)),
+        K_event, dist_event, K_ir, dist_ir,
+        (max(width, ir_width), max(height, ir_height)),
         R, T,
         flags=cv2.CALIB_ZERO_DISPARITY, alpha=0
     )
