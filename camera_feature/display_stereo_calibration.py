@@ -41,6 +41,17 @@ def run():
     ir_width, ir_height = 640, 480
     cfg.enable_stream(rs.stream.infrared, 1, ir_width, ir_height, rs.format.y8, 30)
     pipe.start(cfg)
+    
+    # ---- Disable IR emitter / projector ----
+    profile = pipe.get_active_profile()
+    device = profile.get_device()
+    depth_sensor = device.query_sensors()[0]
+
+    if depth_sensor.supports(rs.option.emitter_enabled):
+        depth_sensor.set_option(rs.option.emitter_enabled, 0.0)
+    elif depth_sensor.supports(rs.option.laser_power):
+        # Fallback: projector off by setting laser power to 0
+        depth_sensor.set_option(rs.option.laser_power, 0.0)
 
     # ------------------------- Prepare Object Points -------------------------
     objp = np.zeros((GRID_ROWS * GRID_COLS, 3), np.float32)
