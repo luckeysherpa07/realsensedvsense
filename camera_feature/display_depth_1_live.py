@@ -22,7 +22,7 @@ def run():
         depth_image = np.asanyarray(depth_frame.get_data())
         color_image = np.asanyarray(color_frame.get_data())
         ir_image = np.asanyarray(ir_frame.get_data())
-        depth_cm = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha = 0.5), cv2.COLORMAP_JET)
+        depth_cm = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha = 0.1), cv2.COLORMAP_JET)
 
         cv2.imshow('rgb', color_image)
         cv2.imshow('depth', depth_cm)

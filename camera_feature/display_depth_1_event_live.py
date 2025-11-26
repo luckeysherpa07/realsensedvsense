@@ -51,7 +51,7 @@ def run():
 
             #Mapping the value for Depth Camera
             depth_image = np.asanyarray(depth_frame.get_data())
-            depth_canvas = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.5), cv2.COLORMAP_JET)
+            depth_canvas = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.1), cv2.COLORMAP_JET)
 
 
             ###############################
