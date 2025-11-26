@@ -41,7 +41,7 @@ def run():
     ir_width, ir_height = 640, 480
     cfg.enable_stream(rs.stream.infrared, 1, ir_width, ir_height, rs.format.y8, 30)
     pipe.start(cfg)
-    
+
     # ---- Disable IR emitter / projector ----
     profile = pipe.get_active_profile()
     device = profile.get_device()
@@ -161,30 +161,17 @@ def run():
                 combined = np.hstack((evt_disp, ir_disp))
                 cv2.imshow("Event (left) | IR (right) - Press SPACE to accept", combined)
 
-                key = cv2.waitKey(0)  # Wait until a key is pressed
-                if key == ord('y'):  # Accept frame
-                    collected_views += 1
-                    print(f"Accepted synchronized view {collected_views}/{TOTAL_VIEWS}")
+                collected_views += 1
+                print(f"Accepted synchronized view {collected_views}/{TOTAL_VIEWS}")
 
-                    object_points.append(objp.copy())
-                    img_points_event.append(centers_event)
-                    img_points_ir.append(centers_ir)
+                object_points.append(objp.copy())
+                img_points_event.append(centers_event)
+                img_points_ir.append(centers_ir)
 
-                    # Save images
-                    cv2.imwrite(f"event_view_{collected_views}.png", evt_disp)
-                    cv2.imwrite(f"ir_view_{collected_views}.png", ir_disp)
-                    cv2.destroyAllWindows()
-
-                elif key == ord('n'):  # Skip frame
-                    print("Frame skipped.")
-                    cv2.destroyAllWindows()
-                    continue
-
-                else:  # Any other key
-                    print("Invalid key, frame skipped.")
-                    cv2.destroyAllWindows()
-                    continue
-
+                # Save images
+                cv2.imwrite(f"event_view_{collected_views}.png", evt_disp)
+                cv2.imwrite(f"ir_view_{collected_views}.png", ir_disp)
+                cv2.destroyAllWindows()
 
     finally:
         pipe.stop()
