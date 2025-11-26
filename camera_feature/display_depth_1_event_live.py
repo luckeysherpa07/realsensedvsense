@@ -8,8 +8,8 @@ def run():
     # Initialize RealSense pipeline and config
     pipe = rs.pipeline()
     cfg = rs.config()
-    cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)  # RGB stream
-    cfg.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)    # Depth stream
+    cfg.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
+    cfg.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
     pipe.start(cfg)
 
     # Initialize DVSense event camera
@@ -51,8 +51,7 @@ def run():
 
             # Depth processing
             depth_image = np.asanyarray(depth_frame.get_data())
-            depth_normalized = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
-            depth_canvas = cv2.applyColorMap(depth_normalized.astype(np.uint8), cv2.COLORMAP_JET)
+            depth_canvas = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha = 0.1), cv2.COLORMAP_JET)
 
             # RGB processing
             rgb_image = np.asanyarray(color_frame.get_data())  # Already in BGR format
