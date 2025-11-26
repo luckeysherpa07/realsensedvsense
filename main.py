@@ -6,6 +6,7 @@ from camera_feature import display_event_intrinsics
 from camera_feature import display_depth_intrinsics
 from camera_feature import display_stereo_calibration
 from camera_feature import display_tempral_aligned_view
+from camera_feature import display_rectified_view
 
 def main():
     options = {
@@ -17,6 +18,7 @@ def main():
         "6": ("Display Depth Intrinsics", display_depth_intrinsics.run),
         "7": ("Display Stereo Calibration", display_stereo_calibration.run),
         "8": ("Display Temporal Aligned View", display_tempral_aligned_view.run),
+        "9": ("Display Rectified View", display_rectified_view.run),
     }
 
     while True:
