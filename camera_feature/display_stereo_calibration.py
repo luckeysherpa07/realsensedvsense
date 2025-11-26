@@ -42,6 +42,17 @@ def run():
     cfg.enable_stream(rs.stream.infrared, 1, ir_width, ir_height, rs.format.y8, 30)
     pipe.start(cfg)
 
+    # ---- Disable IR emitter / projector ----
+    profile = pipe.get_active_profile()
+    device = profile.get_device()
+    depth_sensor = device.query_sensors()[0]
+
+    if depth_sensor.supports(rs.option.emitter_enabled):
+        depth_sensor.set_option(rs.option.emitter_enabled, 0.0)
+    elif depth_sensor.supports(rs.option.laser_power):
+        # Fallback: projector off by setting laser power to 0
+        depth_sensor.set_option(rs.option.laser_power, 0.0)
+
     # ------------------------- Prepare Object Points -------------------------
     objp = np.zeros((GRID_ROWS * GRID_COLS, 3), np.float32)
     objp[:, :2] = np.mgrid[0:GRID_COLS, 0:GRID_ROWS].T.reshape(-1, 2)
@@ -120,30 +131,49 @@ def run():
 
             # ------------------------- SYNCHRONIZED CAPTURE -------------------------
             if ret_event and ret_ir:
-
-                collected_views += 1
-                print(f"Captured synchronized view {collected_views}/{TOTAL_VIEWS}")
-
+                # Upscale back to original
                 centers_event = (centers_event_small / DS).astype(np.float32).reshape(-1, 1, 2)
                 centers_ir = (centers_ir_small / DS).astype(np.float32).reshape(-1, 1, 2)
 
                 # Subpixel refinement
                 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-4)
-                cv2.cornerSubPix(blur_frame, centers_event, (5, 5), (-1, -1), criteria)
-                cv2.cornerSubPix(ir_resized, centers_ir, (5, 5), (-1, -1), criteria)
+                cv2.cornerSubPix(blur_frame.astype(np.float32), centers_event, (5, 5), (-1, -1), criteria)
+                cv2.cornerSubPix(ir_resized.astype(np.float32), centers_ir, (5, 5), (-1, -1), criteria)
 
-                object_points.append(objp.copy())
-                img_points_event.append(centers_event)
-                img_points_ir.append(centers_ir)
-
-                # Save images ONLY
+                # Draw detected grids for visualization
                 evt_disp = cv2.cvtColor(blur_frame, cv2.COLOR_GRAY2BGR)
                 ir_disp = cv2.cvtColor(ir_resized, cv2.COLOR_GRAY2BGR)
                 cv2.drawChessboardCorners(evt_disp, BOARD_SIZE, centers_event, True)
                 cv2.drawChessboardCorners(ir_disp, BOARD_SIZE, centers_ir, True)
 
-                cv2.imwrite(f"event_view_{collected_views}.png", evt_disp)
-                cv2.imwrite(f"ir_view_{collected_views}.png", ir_disp)
+                # Show side by side
+                combined = np.hstack((evt_disp, ir_disp))
+                cv2.imshow("Event (left) | IR (right) - Press SPACE to accept", combined)
+
+                key = cv2.waitKey(0)  # Wait until a key is pressed
+                if key == ord('y'):  # Accept frame
+                    collected_views += 1
+                    print(f"Accepted synchronized view {collected_views}/{TOTAL_VIEWS}")
+
+                    object_points.append(objp.copy())
+                    img_points_event.append(centers_event)
+                    img_points_ir.append(centers_ir)
+
+                    # Save images
+                    cv2.imwrite(f"event_view_{collected_views}.png", evt_disp)
+                    cv2.imwrite(f"ir_view_{collected_views}.png", ir_disp)
+                    cv2.destroyAllWindows()
+
+                elif key == ord('n'):  # Skip frame
+                    print("Frame skipped.")
+                    cv2.destroyAllWindows()
+                    continue
+
+                else:  # Any other key
+                    print("Invalid key, frame skipped.")
+                    cv2.destroyAllWindows()
+                    continue
+
 
     finally:
         pipe.stop()
