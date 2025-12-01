@@ -125,9 +125,12 @@ def run():
     ret_ir, mtx_ir, dist_ir, rvecs_ir, tvecs_ir = cv2.calibrateCamera(
         objpoints, imgpoints_ir, ir_image.shape[::-1], None, None
     )
+    print("INDIVIDUAL IR CAMERA CALIBRATION", ret_ir, mtx_ir, dist_ir)
+
     ret_dvs, mtx_dvs, dist_dvs, rvecs_dvs, tvecs_dvs = cv2.calibrateCamera(
         objpoints, imgpoints_dvs, (width, height), None, None
     )
+    print("INDIVIDUAL EVENT CAMERA CALIBRATION", ret_dvs, mtx_dvs, dist_dvs)
 
     # ---------------- Stereo calibration ----------------
     flags = cv2.CALIB_FIX_INTRINSIC
