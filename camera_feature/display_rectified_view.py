@@ -106,11 +106,20 @@ def create_rectify_maps(mtx1, dist1, mtx2, dist2, R, T, size1, size2):
     common_h = max(size1[1], size2[1])
     common_size = (common_w, common_h)
 
+    print("Size1", size1)
+    print("Size2", size2)
+    print("Common Size", common_size)
+
     flags = cv2.CALIB_ZERO_DISPARITY
     # alpha = 0 => crop, alpha = -1 => keep all pixels. Use 0 to remove black borders.
     R1, R2, P1, P2, Q, _, _ = cv2.stereoRectify(
         mtx1, dist1, mtx2, dist2, common_size, R, T, flags=flags, alpha=0
     )
+
+    print("R1: ", R1)
+    print("R2: ", R2)
+    print("P1: ", P1)
+    print("P2: ", P2)
 
     # For each camera, create maps sized to that camera's resolution
     map1_x, map1_y = cv2.initUndistortRectifyMap(
@@ -119,6 +128,9 @@ def create_rectify_maps(mtx1, dist1, mtx2, dist2, R, T, size1, size2):
     map2_x, map2_y = cv2.initUndistortRectifyMap(
         mtx2, dist2, R2, P2, (size2[0], size2[1]), cv2.CV_32FC1
     )
+
+    print("map1 range:", np.min(map1_x), np.max(map1_x))
+    print("map2 range:", np.min(map2_x), np.max(map2_x))
 
     return (map1_x, map1_y), (map2_x, map2_y), Q, (R1, R2, P1, P2)
 
