@@ -9,6 +9,7 @@ from camera_feature import display_stereo_calibration_checkerboard
 from camera_feature import display_tempral_aligned_view
 from camera_feature import display_rectified_view
 from camera_feature import display_rectified_view_simplify
+from camera_feature import display_depth_ir_difference_view
 
 def main():
     options = {
@@ -23,6 +24,7 @@ def main():
         "9": ("Display Temporal Aligned View", display_tempral_aligned_view.run),
         "10": ("Display Rectified View", display_rectified_view.run),
         "11": ("Display Rectified View Simpilfy", display_rectified_view_simplify.run),
+        "12": ("Display Depth IR Difference View", display_depth_ir_difference_view.run),
     }
 
     while True:
