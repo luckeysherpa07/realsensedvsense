@@ -134,12 +134,12 @@ def run():
 
     # ---------------- Stereo calibration ----------------
     flags = cv2.CALIB_FIX_INTRINSIC
-    ret, mtx_dvs, dist_dvs, mtx_ir, dist_ir, R, T, E, F = cv2.stereoCalibrate(
+    ret, mtx_ir, dist_ir, mtx_dvs, dist_dvs, R, T, E, F = cv2.stereoCalibrate(
         objpoints,
-        imgpoints_dvs,
-        imgpoints_ir,
-        mtx_dvs, dist_dvs,
+        imgpoints_ir,   # left
+        imgpoints_dvs,  # right
         mtx_ir, dist_ir,
+        mtx_dvs, dist_dvs,
         ir_image.shape[::-1],
         criteria=criteria,
         flags=flags
