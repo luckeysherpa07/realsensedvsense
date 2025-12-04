@@ -113,7 +113,7 @@ def create_rectify_maps(mtx1, dist1, mtx2, dist2, R, T, size1, size2):
     flags = cv2.CALIB_ZERO_DISPARITY
     # alpha = 0 => crop, alpha = -1 => keep all pixels. Use 0 to remove black borders.
     R1, R2, P1, P2, Q, _, _ = cv2.stereoRectify(
-        mtx1, dist1, mtx2, dist2, common_size, R, T, flags=flags, alpha=0
+        mtx1, dist1, mtx2, dist2, common_size, R, T, flags=flags, alpha=-1
     )
 
     print("R1: ", R1)
@@ -181,8 +181,8 @@ def run():
     # ----------------- Build rectification maps -----------------
     try:
         # sizes passed as (width, height)
-        maps_dvs, maps_ir, Q, (R1, R2, P1, P2) = create_rectify_maps(
-            mtx_dvs, dist_dvs, mtx_ir, dist_ir, R, T, (width, height), (ir_w, ir_h)
+        maps_ir, maps_dvs, Q, (R1, R2, P1, P2) = create_rectify_maps(
+            mtx_ir, dist_ir, mtx_dvs, dist_dvs, R, T, (ir_w, ir_h), (width, height),
         )
     except Exception as e:
         print("StereoRectify / map creation failed:", e)
