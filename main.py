@@ -11,6 +11,7 @@ from camera_feature import display_rectified_view
 from camera_feature import display_rectified_view_simplify
 from camera_feature import display_depth_ir_difference_view
 from camera_feature import record_depth_ir_rgb_event
+from camera_feature import playback_recorded_files
 
 def main():
     options = {
@@ -27,6 +28,7 @@ def main():
         "11": ("Display Rectified View Simpilfy", display_rectified_view_simplify.run),
         "12": ("Display Depth IR Difference View", display_depth_ir_difference_view.run),
         "13": ("Record Depth IR RGB Event", record_depth_ir_rgb_event.run),
+        "14": ("Playback Recorded Files", playback_recorded_files.run),
     }
 
     while True:
