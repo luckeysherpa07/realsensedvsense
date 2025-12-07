@@ -1,6 +1,9 @@
 # Ignore Python virtual environment folder
 realsensedvsense/
 
+# Ignore Recording Files
+dataset/
+
 # Ignore Python bytecode and cache directories
 camera_feature/__pycache__/
 
