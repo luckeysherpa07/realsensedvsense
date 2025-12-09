@@ -4,6 +4,7 @@ import numpy as np
 import pyrealsense2 as rs
 from metavision_core.event_io import EventsIterator, LiveReplayEventsIterator, is_live_camera
 from metavision_sdk_core import PeriodicFrameGenerationAlgorithm, ColorPalette
+import time
 
 def run():
     dataset_path = "dataset"
@@ -38,10 +39,11 @@ def run():
     bag_file = os.path.join(dataset_path, f"{selected_prefix}_realsense.bag")
 
     # -------------------------------
-    # Event iterator
+    # Event iterator setup
     # -------------------------------
     mv_iterator = None
     event_frame = None
+    event_start_ts = None
     if os.path.exists(event_file):
         mv_iterator = EventsIterator(input_path=event_file, delta_t=1000)
         height, width = mv_iterator.get_size()
@@ -59,6 +61,9 @@ def run():
             event_frame = cd_frame.copy()
 
         event_frame_gen.set_output_callback(on_cd_frame_cb)
+        ev_iter = iter(mv_iterator)
+    else:
+        ev_iter = iter([None])
 
     # -------------------------------
     # RealSense bag setup
@@ -73,29 +78,21 @@ def run():
 
     print("Press ESC to exit any window.")
 
+    # -------------------------------
+    # Playback loop with timestamp alignment and diagnostics
+    # -------------------------------
+    start_time_wall = time.time()
+    start_real_ts = None
+
+    event_frame_count = 0
+    real_frame_count = 0
+    last_diag_time = time.time()
+
     try:
-        # -------------------------------
-        # Main loop
-        # -------------------------------
-        # Create an iterator for the event camera if available
-        if mv_iterator:
-            ev_iter = iter(mv_iterator)
-        else:
-            ev_iter = iter([None])  # dummy iterator
-
         while True:
-            # -------------------------------
-            # Event frames
-            # -------------------------------
-            evs = next(ev_iter, None)
-            if mv_iterator and evs is None:
-                break  # end of events
-            if evs is not None:
-                event_frame_gen.process_events(evs)
-
-            # -------------------------------
-            # RealSense frames
-            # -------------------------------
+            # ---------------- RealSense frames ----------------
+            depth_frame = color_frame = None
+            real_ts = None
             if pipeline:
                 frames = pipeline.wait_for_frames()
                 depth_frame = frames.get_depth_frame()
@@ -103,14 +100,51 @@ def run():
 
                 if depth_frame:
                     depth_color = np.asanyarray(colorizer.colorize(depth_frame).get_data())
-                    cv2.imshow("Depth Stream", depth_color)
+                    real_ts = depth_frame.get_timestamp()  # ms
+                    if start_real_ts is None:
+                        start_real_ts = real_ts
+                    aligned_real_ts_us = int((real_ts - start_real_ts) * 1000)
+                    real_frame_count += 1
+                else:
+                    aligned_real_ts_us = None
+
                 if color_frame:
                     color_image = np.asanyarray(color_frame.get_data())
-                    cv2.imshow("RGB Stream", color_image)
 
-            # -------------------------------
-            # Display event frame
-            # -------------------------------
+            # ---------------- Event frames ----------------
+            if mv_iterator:
+                accumulated_events = []
+                while True:
+                    evs = next(ev_iter, None)
+                    if evs is None or evs.size == 0:
+                        break
+                    if event_start_ts is None:
+                        event_start_ts = evs["t"][0]
+
+                    ev_ts_aligned = evs["t"] - event_start_ts
+
+                    # Accumulate only events up to current RealSense timestamp
+                    if aligned_real_ts_us is not None:
+                        mask = ev_ts_aligned <= aligned_real_ts_us
+                        if np.any(mask):
+                            accumulated_events.append(evs[mask])
+                        # Stop accumulating beyond current frame
+                        if ev_ts_aligned[-1] > aligned_real_ts_us:
+                            break
+                    else:
+                        accumulated_events.append(evs)
+
+                # Combine all accumulated events for this frame
+                if accumulated_events:
+                    combined = np.concatenate(accumulated_events)
+                    event_frame_gen.process_events(combined)
+
+
+            # ---------------- Display frames ----------------
+            if color_frame is not None:
+                cv2.imshow("RGB Stream", color_image)
+            if depth_frame is not None:
+                cv2.imshow("Depth Stream", depth_color)
             if event_frame is not None:
                 cv2.imshow("Event", event_frame)
 
