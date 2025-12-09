@@ -1,13 +1,10 @@
 import os
 import cv2
+import numpy as np
+import pyrealsense2 as rs
 from metavision_core.event_io import EventsIterator, LiveReplayEventsIterator, is_live_camera
 from metavision_sdk_core import PeriodicFrameGenerationAlgorithm, ColorPalette
-from metavision_sdk_ui import EventLoop, BaseWindow, MTWindow, UIKeyEvent
-import numpy as np
 
-# -------------------------------
-# Main playback function
-# -------------------------------
 def run():
     dataset_path = "dataset"
     files = os.listdir(dataset_path)
@@ -16,7 +13,7 @@ def run():
     prefixes = set()
     for f in files:
         name = os.path.splitext(f)[0]
-        prefix = name.split("_")[0]
+        prefix = "_".join(name.split("_")[:-1])
         prefixes.add(prefix)
     prefixes = sorted(list(prefixes))
 
@@ -36,36 +33,25 @@ def run():
     selected_prefix = prefixes[int(choice) - 1]
     print(f"\nPlaying recording: {selected_prefix}\n")
 
-    # File paths
+    # Paths
     event_file = os.path.join(dataset_path, f"{selected_prefix}_event.raw")
-    ir_file = os.path.join(dataset_path, f"{selected_prefix}_ir.avi")
-    depth_file = os.path.join(dataset_path, f"{selected_prefix}_depth.avi")
-    rgb_file = os.path.join(dataset_path, f"{selected_prefix}_rgb.avi")
+    bag_file = os.path.join(dataset_path, f"{selected_prefix}_realsense.bag")
 
     # -------------------------------
-    # Load video captures
+    # Event iterator
     # -------------------------------
-    caps = {}
-    if os.path.exists(ir_file):
-        caps['IR'] = cv2.VideoCapture(ir_file)
-    if os.path.exists(depth_file):
-        caps['Depth'] = cv2.VideoCapture(depth_file)
-    if os.path.exists(rgb_file):
-        caps['RGB'] = cv2.VideoCapture(rgb_file)
-
-    # -------------------------------
-    # Load event iterator
-    # -------------------------------
+    mv_iterator = None
+    event_frame = None
     if os.path.exists(event_file):
         mv_iterator = EventsIterator(input_path=event_file, delta_t=1000)
         height, width = mv_iterator.get_size()
         if not is_live_camera(event_file):
             mv_iterator = LiveReplayEventsIterator(mv_iterator)
 
-        # Event Frame Generator
-        event_frame_gen = PeriodicFrameGenerationAlgorithm(sensor_width=width, sensor_height=height,
-                                                           fps=25, palette=ColorPalette.Dark)
-        # Store current frame
+        event_frame_gen = PeriodicFrameGenerationAlgorithm(sensor_width=width,
+                                                           sensor_height=height,
+                                                           fps=25,
+                                                           palette=ColorPalette.Dark)
         event_frame = np.zeros((height, width, 3), dtype=np.uint8)
 
         def on_cd_frame_cb(ts, cd_frame):
@@ -73,46 +59,70 @@ def run():
             event_frame = cd_frame.copy()
 
         event_frame_gen.set_output_callback(on_cd_frame_cb)
-    else:
-        mv_iterator = None
-        event_frame = None
 
     # -------------------------------
-    # Main playback loop
+    # RealSense bag setup
     # -------------------------------
+    pipeline = None
+    if os.path.exists(bag_file):
+        pipeline = rs.pipeline()
+        config = rs.config()
+        rs.config.enable_device_from_file(config, bag_file)
+        pipeline_profile = pipeline.start(config)
+        colorizer = rs.colorizer()
+
     print("Press ESC to exit any window.")
-    for evs in mv_iterator if mv_iterator else [None]:
-        EventLoop.poll_and_dispatch()
 
-        # Process event frames
-        if mv_iterator and evs is not None:
-            event_frame_gen.process_events(evs)
+    try:
+        # -------------------------------
+        # Main loop
+        # -------------------------------
+        # Create an iterator for the event camera if available
+        if mv_iterator:
+            ev_iter = iter(mv_iterator)
+        else:
+            ev_iter = iter([None])  # dummy iterator
 
-        # Read videos
-        frames = {}
-        for key, cap in caps.items():
-            ret, frame = cap.read()
-            if not ret:
-                # Restart video to loop
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                ret, frame = cap.read()
-            frames[key] = frame
+        while True:
+            # -------------------------------
+            # Event frames
+            # -------------------------------
+            evs = next(ev_iter, None)
+            if mv_iterator and evs is None:
+                break  # end of events
+            if evs is not None:
+                event_frame_gen.process_events(evs)
 
-        # Display videos
-        for key, frame in frames.items():
-            cv2.imshow(key, frame)
+            # -------------------------------
+            # RealSense frames
+            # -------------------------------
+            if pipeline:
+                frames = pipeline.wait_for_frames()
+                depth_frame = frames.get_depth_frame()
+                color_frame = frames.get_color_frame()
 
-        # Display event frame
-        if event_frame is not None:
-            cv2.imshow('Event', event_frame)
+                if depth_frame:
+                    depth_color = np.asanyarray(colorizer.colorize(depth_frame).get_data())
+                    cv2.imshow("Depth Stream", depth_color)
+                if color_frame:
+                    color_image = np.asanyarray(color_frame.get_data())
+                    cv2.imshow("RGB Stream", color_image)
 
-        # Exit check
-        if cv2.waitKey(1) & 0xFF == 27:
-            break
-        if mv_iterator and mv_iterator.should_close() if hasattr(mv_iterator, 'should_close') else False:
-            break
+            # -------------------------------
+            # Display event frame
+            # -------------------------------
+            if event_frame is not None:
+                cv2.imshow("Event", event_frame)
 
-    # Release resources
-    for cap in caps.values():
-        cap.release()
-    cv2.destroyAllWindows()
+            key = cv2.waitKey(1)
+            if key == 27:  # ESC
+                break
+
+    finally:
+        if pipeline:
+            pipeline.stop()
+        cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    run()
