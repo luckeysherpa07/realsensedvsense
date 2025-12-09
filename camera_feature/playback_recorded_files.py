@@ -52,7 +52,7 @@ def run():
 
         event_frame_gen = PeriodicFrameGenerationAlgorithm(sensor_width=width,
                                                            sensor_height=height,
-                                                           fps=25,
+                                                           fps=60,
                                                            palette=ColorPalette.Dark)
         event_frame = np.zeros((height, width, 3), dtype=np.uint8)
 
@@ -104,6 +104,7 @@ def run():
                     if start_real_ts is None:
                         start_real_ts = real_ts
                     aligned_real_ts_us = int((real_ts - start_real_ts) * 1000)
+                    print("alignedRealTS..... REAL_TS...... START_REAL_TS", aligned_real_ts_us, real_ts, start_real_ts)
                     real_frame_count += 1
                 else:
                     aligned_real_ts_us = None
@@ -122,6 +123,7 @@ def run():
                         event_start_ts = evs["t"][0]
 
                     ev_ts_aligned = evs["t"] - event_start_ts
+                    print("EV_TS_ALINGED...........EVS().......EV_START_TS", ev_ts_aligned, evs['t'], event_start_ts)
 
                     # Accumulate only events up to current RealSense timestamp
                     if aligned_real_ts_us is not None:
