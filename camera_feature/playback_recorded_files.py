@@ -145,10 +145,12 @@ def run():
             # ---------------- Display frames ----------------
             if color_frame is not None:
                 cv2.imshow("RGB Stream", color_image)
+                print("RGB FRAME #################", color_image)
             if depth_frame is not None:
                 cv2.imshow("Depth Stream", depth_color)
             if event_frame is not None:
                 cv2.imshow("Event", event_frame)
+                print("EVENT FRAME##################", event_frame)
 
             key = cv2.waitKey(1)
             if key == 27:  # ESC
