@@ -12,6 +12,7 @@ from camera_feature import display_rectified_view_simplify
 from camera_feature import display_depth_ir_difference_view
 from camera_feature import record_depth_ir_rgb_event
 from camera_feature import playback_recorded_files
+from camera_feature import calibrate_frame_level_offset
 
 def main():
     options = {
@@ -29,6 +30,7 @@ def main():
         "12": ("Display Depth IR Difference View", display_depth_ir_difference_view.run),
         "13": ("Record Depth IR RGB Event", record_depth_ir_rgb_event.run),
         "14": ("Playback Recorded Files", playback_recorded_files.run),
+        "15": ("Calibrate Frame Level Offset", calibrate_frame_level_offset.run),
     }
 
     while True:
