@@ -4,7 +4,6 @@ import numpy as np
 import pyrealsense2 as rs
 from metavision_core.event_io import EventsIterator, LiveReplayEventsIterator, is_live_camera
 from metavision_sdk_core import PeriodicFrameGenerationAlgorithm, ColorPalette
-import time
 
 def run():
     dataset_path = "dataset"
@@ -37,6 +36,21 @@ def run():
     # Paths
     event_file = os.path.join(dataset_path, f"{selected_prefix}_event.raw")
     bag_file = os.path.join(dataset_path, f"{selected_prefix}_realsense.bag")
+    delta_file = os.path.join(dataset_path, f"{selected_prefix}_delta_seconds.txt")
+
+    # -------------------------------
+    # Read calibration offset
+    # -------------------------------
+    delta_seconds = 0.0
+    if os.path.exists(delta_file):
+        with open(delta_file, "r") as f:
+            delta_seconds = float(f.read().strip())
+        print(f"Calibration offset (delta_seconds) read from file: {delta_seconds} s")
+        print("Sign convention: Δt = t_event - t_realsense")
+        if delta_seconds > 0:
+            print("Events are physically later than RealSense; shift events backward to align.")
+        else:
+            print("Events are physically earlier than RealSense; shift events forward to align.")
 
     # -------------------------------
     # Event iterator setup
@@ -58,7 +72,9 @@ def run():
 
         def on_cd_frame_cb(ts, cd_frame):
             nonlocal event_frame
-            event_frame = cd_frame.copy()
+            # Use decay to avoid accumulation lag
+            alpha = 0.5
+            event_frame = cv2.addWeighted(event_frame, alpha, cd_frame, 1 - alpha, 0)
 
         event_frame_gen.set_output_callback(on_cd_frame_cb)
         ev_iter = iter(mv_iterator)
@@ -79,14 +95,10 @@ def run():
     print("Press ESC to exit any window.")
 
     # -------------------------------
-    # Playback loop with timestamp alignment and diagnostics
+    # Playback loop with timestamp alignment
     # -------------------------------
-    start_time_wall = time.time()
-    start_real_ts = None
-
-    event_frame_count = 0
-    real_frame_count = 0
-    last_diag_time = time.time()
+    start_real_ts = None  # first RealSense timestamp (ms)
+    frame_delay_us = int(1e6 / 60)  # event frame generation delay (~16.6ms for 60Hz)
 
     try:
         while True:
@@ -103,54 +115,69 @@ def run():
                     real_ts = depth_frame.get_timestamp()  # ms
                     if start_real_ts is None:
                         start_real_ts = real_ts
-                    aligned_real_ts_us = int((real_ts - start_real_ts) * 1000)
-                    print("alignedRealTS..... REAL_TS...... START_REAL_TS", aligned_real_ts_us, real_ts, start_real_ts)
-                    real_frame_count += 1
-                else:
-                    aligned_real_ts_us = None
+
+                    # Convert RealSense timestamp to µs relative to start
+                    t_rs = int((real_ts - start_real_ts) * 1000)
 
                 if color_frame:
                     color_image = np.asanyarray(color_frame.get_data())
 
             # ---------------- Event frames ----------------
+            last_event_ts = None
+            events_in_frame = 0
             if mv_iterator:
                 accumulated_events = []
                 while True:
-                    evs = next(ev_iter, None)
+                    try:
+                        evs = next(ev_iter)
+                    except StopIteration:
+                        evs = None
+
                     if evs is None or evs.size == 0:
                         break
+
                     if event_start_ts is None:
                         event_start_ts = evs["t"][0]
 
-                    ev_ts_aligned = evs["t"] - event_start_ts
-                    print("EV_TS_ALINGED...........EVS().......EV_START_TS", ev_ts_aligned, evs['t'], event_start_ts)
+                    # Align event timestamps relative to first event and apply delta_seconds
+                    ev_ts_aligned = evs["t"] - event_start_ts + int(delta_seconds * 1e6)
 
-                    # Accumulate only events up to current RealSense timestamp
-                    if aligned_real_ts_us is not None:
-                        mask = ev_ts_aligned <= aligned_real_ts_us
+                    # Accumulate only events up to current RS timestamp
+                    if pipeline and real_ts is not None:
+                        mask = ev_ts_aligned <= t_rs
                         if np.any(mask):
                             accumulated_events.append(evs[mask])
-                        # Stop accumulating beyond current frame
-                        if ev_ts_aligned[-1] > aligned_real_ts_us:
+                            last_event_ts = ev_ts_aligned[mask][-1]
+                            events_in_frame += mask.sum()
+                        if ev_ts_aligned[-1] > t_rs:
                             break
                     else:
                         accumulated_events.append(evs)
+                        last_event_ts = ev_ts_aligned[-1]
+                        events_in_frame += evs.size
 
-                # Combine all accumulated events for this frame
                 if accumulated_events:
                     combined = np.concatenate(accumulated_events)
                     event_frame_gen.process_events(combined)
 
-
             # ---------------- Display frames ----------------
             if color_frame is not None:
-                cv2.imshow("RGB Stream", color_image)
-                print("RGB FRAME #################", color_image)
+                overlay = color_image.copy()
+                if event_frame is not None:
+                    cv2.addWeighted(event_frame, 0.7, overlay, 0.3, 0, overlay)
+                cv2.imshow("RGB + Event Overlay", overlay)
+
             if depth_frame is not None:
                 cv2.imshow("Depth Stream", depth_color)
             if event_frame is not None:
-                cv2.imshow("Event", event_frame)
-                print("EVENT FRAME##################", event_frame)
+                cv2.imshow("Event Stream", event_frame)
+
+            # ---------------- Debug Terminal Output ----------------
+            if pipeline and real_ts is not None:
+                print(f"RS ms: {real_ts:.3f}, "
+                      f"Calibrated RS µs: {t_rs}, "
+                      f"Event aligned last ts µs: {last_event_ts if last_event_ts is not None else 'N/A'}, "
+                      f"Events in frame: {events_in_frame}")
 
             key = cv2.waitKey(1)
             if key == 27:  # ESC
