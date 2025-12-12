@@ -140,7 +140,7 @@ def run():
                         event_start_ts = evs["t"][0]
 
                     # Align event timestamps relative to first event and apply delta_seconds
-                    ev_ts_aligned = evs["t"] - event_start_ts - int(delta_seconds * 1e6)
+                    ev_ts_aligned = evs["t"] - event_start_ts + int(delta_seconds * 1e6)
 
                     # Accumulate only events up to current RS timestamp
                     if pipeline and real_ts is not None:
