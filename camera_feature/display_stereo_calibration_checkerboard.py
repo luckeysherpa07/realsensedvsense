@@ -2,6 +2,7 @@ import pyrealsense2 as rs
 import numpy as np
 import cv2
 import torch
+import os
 from dvsense_driver.camera_manager import DvsCameraManager
 
 def run():
@@ -22,6 +23,14 @@ def run():
             'bg': [0, 0, 0]
         }
     }
+
+    # ---------------- Prepare save directory ----------------
+    base_dir = os.path.dirname(os.path.abspath(__file__))       # .../camera_feature
+    parent_dir = os.path.dirname(base_dir)                      # parent folder
+    save_dir = os.path.join(parent_dir, "calibration_images")   # sibling folder
+
+    os.makedirs(save_dir, exist_ok=True)
+    print(f"Saving calibration images to: {save_dir}")
 
     objp = np.zeros((CHECKERBOARD_ROWS * CHECKERBOARD_COLS, 3), np.float32)
     objp[:, :2] = np.mgrid[0:CHECKERBOARD_COLS, 0:CHECKERBOARD_ROWS].T.reshape(-1, 2)
@@ -86,10 +95,14 @@ def run():
             display_ir = cv2.cvtColor(ir_image, cv2.COLOR_GRAY2BGR)
 
             # ---------------- Detect checkerboard ----------------
-            ret_ir, corners_ir = cv2.findChessboardCorners(ir_image, BOARD_SIZE,
-                                                           cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE)
-            ret_dvs, corners_dvs = cv2.findChessboardCorners(dvs_blur, BOARD_SIZE,
-                                                             cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE)
+            ret_ir, corners_ir = cv2.findChessboardCorners(
+                ir_image, BOARD_SIZE,
+                cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
+            )
+            ret_dvs, corners_dvs = cv2.findChessboardCorners(
+                dvs_blur, BOARD_SIZE,
+                cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
+            )
 
             if ret_ir:
                 cv2.drawChessboardCorners(display_ir, BOARD_SIZE, corners_ir, ret_ir)
@@ -103,13 +116,19 @@ def run():
             if key == ord('q'):
                 break
 
+            # Save images if detected
             if ret_ir and ret_dvs:
-                cv2.imwrite(f"ir_frame_{captured_pairs}.png", display_ir)
-                cv2.imwrite(f"dvs_frame_{captured_pairs}.png", display_dvs)
+                ir_path = os.path.join(save_dir, f"ir_frame_{captured_pairs}.png")
+                dvs_path = os.path.join(save_dir, f"dvs_frame_{captured_pairs}.png")
+
+                cv2.imwrite(ir_path, display_ir)
+                cv2.imwrite(dvs_path, display_dvs)
+
                 objpoints.append(objp)
                 imgpoints_ir.append(corners_ir)
                 imgpoints_dvs.append(corners_dvs)
                 captured_pairs += 1
+
                 print(f"Captured pair {captured_pairs}/{NUM_IMAGES}")
 
     finally:
