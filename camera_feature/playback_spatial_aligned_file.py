@@ -1,305 +1,228 @@
-import os
-import cv2
-import numpy as np
 import pyrealsense2 as rs
-import re
-from metavision_core.event_io import EventsIterator
-from metavision_sdk_core import PeriodicFrameGenerationAlgorithm, ColorPalette
+import numpy as np
+import cv2
+import torch
+import os
+import sys
+from dvsense_driver.camera_manager import DvsCameraManager
 
-# -----------------------------------------------------------------------------
-# 1. Calibration Parsing Helper
-# -----------------------------------------------------------------------------
-def load_opencv_yaml(filepath):
-    """
-    Parses a specific OpenCV YAML format containing matrices without 
-    requiring the full opencv yaml parser or external yaml libraries.
-    """
+# ---------------- CONFIGURATION ----------------
+EVENT_BATCH_TIME = 10000     # 10ms accumulation
+DEPTH_SCALE_FACTOR = 100.0   # RealSense (m) -> Calibration (cm). 1m = 100cm.
+VIDEO_FPS = 30
+
+def load_calibration_yaml(filepath):
     if not os.path.exists(filepath):
-        print(f"Calibration file not found: {filepath}")
-        return None
+        raise FileNotFoundError(f"Calibration file not found at: {filepath}")
 
-    data = {}
-    with open(filepath, 'r') as f:
-        content = f.read()
+    fs = cv2.FileStorage(filepath, cv2.FILE_STORAGE_READ)
+    
+    def get_mat(node_name):
+        mat = fs.getNode(node_name).mat()
+        if mat is None:
+            raise ValueError(f"Could not find {node_name} in YAML.")
+        return mat
 
-    # Regex to find matrix definitions
-    pattern = re.compile(
-        r"(\w+):\s*!!opencv-matrix\s*"
-        r"rows:\s*(\d+)\s*"
-        r"cols:\s*(\d+)\s*"
-        r"dt:\s*[a-z]\s*"
-        r"data:\s*\[(.*?)\]", 
-        re.DOTALL
+    calib = {}
+    calib['K_dvs'] = get_mat("DVS_intrinsics")
+    calib['D_dvs'] = get_mat("DVS_distortion")
+    calib['K_ir']  = get_mat("IR_intrinsics")
+    calib['D_ir']  = get_mat("IR_distortion")
+    calib['R']     = get_mat("Rotation")
+    calib['T']     = get_mat("Translation")
+    
+    fs.release()
+    return calib
+
+def project_dvs_to_ir_view(dvs_img_tensor, depth_tensor, K_ir, K_dvs, R, T, height, width, device='cuda'):
+    """
+    Warps the DVS image to match the IR camera view using Depth.
+    Performed on GPU for speed.
+    """
+    # 1. Create Grid Manually to ensure (Height, Width) dimensions
+    # height should be 720, width should be 1280
+    rows = torch.arange(height, device=device, dtype=torch.float32)
+    cols = torch.arange(width, device=device, dtype=torch.float32)
+    
+    # y: varies down rows (720, 1280)
+    y = rows.view(-1, 1).repeat(1, width)
+    # x: varies across columns (720, 1280)
+    x = cols.view(1, -1).repeat(height, 1)
+
+    # Unpack Intrinsics (IR)
+    fx_ir, fy_ir = K_ir[0, 0], K_ir[1, 1]
+    cx_ir, cy_ir = K_ir[0, 2], K_ir[1, 2]
+    
+    # Unpack Intrinsics (DVS)
+    fx_dvs, fy_dvs = K_dvs[0, 0], K_dvs[1, 1]
+    cx_dvs, cy_dvs = K_dvs[0, 2], K_dvs[1, 2]
+
+    # 2. Back-project IR pixels to 3D point cloud (P_ir)
+    Z = depth_tensor # Expecting (720, 1280)
+    
+    # x, y, Z must all be (720, 1280)
+    X = (x - cx_ir) * Z / fx_ir
+    Y = (y - cy_ir) * Z / fy_ir
+    
+    # Shape: (3, H*W)
+    P_ir = torch.stack((X, Y, Z), dim=0).reshape(3, -1)
+    
+    # 3. Transform to DVS Coordinate System: P_dvs = R * P_ir + T
+    R_torch = torch.from_numpy(R).to(device).float()
+    T_torch = torch.from_numpy(T).to(device).float()
+    
+    P_dvs = torch.mm(R_torch, P_ir) + T_torch
+    
+    # 4. Project P_dvs onto DVS Image Plane
+    X_dvs = P_dvs[0, :]
+    Y_dvs = P_dvs[1, :]
+    Z_dvs = P_dvs[2, :]
+    
+    # Avoid division by zero
+    Z_dvs[Z_dvs == 0] = 1e-6
+    
+    u_dvs = (X_dvs / Z_dvs) * fx_dvs + cx_dvs
+    v_dvs = (Y_dvs / Z_dvs) * fy_dvs + cy_dvs
+    
+    # 5. Sample from Source DVS Image
+    dvs_H, dvs_W = dvs_img_tensor.shape
+    
+    u_norm = (u_dvs / (dvs_W - 1)) * 2 - 1
+    v_norm = (v_dvs / (dvs_H - 1)) * 2 - 1
+    
+    grid = torch.stack((u_norm, v_norm), dim=1).reshape(1, height, width, 2)
+    
+    dvs_batch = dvs_img_tensor.unsqueeze(0).unsqueeze(0) 
+    
+    warped_dvs = torch.nn.functional.grid_sample(
+        dvs_batch, grid, mode='bilinear', padding_mode='zeros', align_corners=True
     )
+    
+    return warped_dvs.squeeze()
 
-    matches = pattern.findall(content)
-    for name, rows, cols, raw_data in matches:
-        cleaned_data = raw_data.replace('\n', '').strip()
-        values = [float(x) for x in cleaned_data.split(',')]
-        matrix = np.array(values, dtype=np.float64).reshape(int(rows), int(cols))
-        data[name] = matrix
-
-    return data
-
-# -----------------------------------------------------------------------------
-# 2. Main Logic
-# -----------------------------------------------------------------------------
 def run():
-    # --- Paths ---
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    dataset_path = os.path.abspath(os.path.join(current_dir, "../dataset"))
-    calib_file = os.path.abspath(os.path.join(current_dir, "../stereo_calibration_checkerboard.yaml"))
-
-    if not os.path.exists(dataset_path):
-        print(f"Error: Dataset path '{dataset_path}' not found.")
+    base_dir = os.path.dirname(os.path.abspath(__file__))      
+    parent_dir = os.path.dirname(base_dir)                     
+    
+    calib_path = os.path.join(parent_dir, "stereo_calibration_checkerboard.yaml")
+    dataset_dir = os.path.join(parent_dir, "dataset")
+    os.makedirs(dataset_dir, exist_ok=True)
+    
+    video_path = os.path.join(dataset_dir, "overlay_result.mp4")
+    print(f"Loading calibration from: {calib_path}")
+    
+    try:
+        calib = load_calibration_yaml(calib_path)
+    except Exception as e:
+        print(f"Error loading calibration: {e}")
         return
 
-    # --- Load Calibration ---
-    calib_data = load_opencv_yaml(calib_file)
-    has_calib = False
-    
-    # Camera 1 = RealSense (Left/Target)
-    # Camera 2 = DVS (Right/Source)
-    K_dvs, D_dvs = None, None
-    K_ir, D_ir = None, None
-    R_stereo = None 
-
-    if calib_data:
-        try:
-            K_dvs = calib_data['DVS_intrinsics']
-            D_dvs = calib_data['DVS_distortion']
-            K_ir = calib_data['IR_intrinsics']
-            D_ir = calib_data['IR_distortion']
-            R_stereo = calib_data['Rotation'] # Rotation from Left to Right
-            
-            print(f"Calibration loaded successfully.")
-            has_calib = True
-        except KeyError as e:
-            print(f"Missing key in calibration file: {e}")
-    else:
-        print(f"Warning: Calibration file not found at {calib_file}")
-
-    # --- File Selection ---
-    files = os.listdir(dataset_path)
-    prefixes = set()
-    for f in files:
-        name = os.path.splitext(f)[0]
-        if "_event" in name:
-            prefix = name.replace("_event", "")
-            prefixes.add(prefix)
-    
-    prefixes = sorted(list(prefixes))
-    if not prefixes:
-        print(f"No event recordings found in {dataset_path}")
-        return
-
-    print("\nAvailable recordings:")
-    for idx, prefix in enumerate(prefixes, start=1):
-        print(f"{idx}. {prefix}")
-
-    choice = input(f"\nSelect a recording to play (1-{len(prefixes)}): ").strip()
-    if not choice.isdigit() or int(choice) < 1 or int(choice) > len(prefixes):
-        print("Invalid choice!")
-        return
-
-    selected_prefix = prefixes[int(choice) - 1]
-    print(f"\nPlaying recording: {selected_prefix}")
-
-    event_file = os.path.join(dataset_path, f"{selected_prefix}_event.raw")
-    bag_file = os.path.join(dataset_path, f"{selected_prefix}_realsense.bag")
-    delta_file = os.path.join(dataset_path, f"{selected_prefix}_delta_seconds.txt")
-
-    # --- Load Time Offset ---
-    delta_us = 0
-    if os.path.exists(delta_file):
-        with open(delta_file, "r") as f:
-            try:
-                val = float(f.read().strip())
-                delta_us = int(val * 1e6)
-                print(f"Loaded Calibration offset: {val:.6f} s")
-            except: pass
-
-    # --- Setup Event Stream ---
-    if not os.path.exists(event_file):
-        print(f"Error: Event file missing: {event_file}")
-        return
-
-    mv_iterator = EventsIterator(input_path=event_file, delta_t=10000)
-    ev_height, ev_width = mv_iterator.get_size()
-    
-    # *** CRITICAL FIX: Convert iterable to iterator ***
-    ev_it = iter(mv_iterator)
-
-    event_frame_gen = PeriodicFrameGenerationAlgorithm(
-        sensor_width=ev_width,
-        sensor_height=ev_height,
-        fps=100, 
-        palette=ColorPalette.Dark
-    )
-    
-    event_frame = np.zeros((ev_height, ev_width, 3), dtype=np.uint8)
-    def on_cd_frame_cb(ts, cd_frame):
-        nonlocal event_frame
-        event_frame = cd_frame.copy()
-    event_frame_gen.set_output_callback(on_cd_frame_cb)
-    
-    event_buffer = np.empty((0,), dtype=[('x', 'u2'), ('y', 'u2'), ('p', 'i2'), ('t', 'i8')])
-
-    # --- Setup RealSense ---
-    if not os.path.exists(bag_file):
-        print(f"Error: Bag file missing: {bag_file}")
-        return
-
+    # ---------------- Initialize RealSense ----------------
     pipeline = rs.pipeline()
     config = rs.config()
-    config.enable_device_from_file(bag_file, repeat_playback=False)
+    config.enable_stream(rs.stream.infrared, 1, 1280, 720, rs.format.y8, 30)
+    config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
+    
+    print("Starting RealSense...")
     profile = pipeline.start(config)
-    playback = profile.get_device().as_playback()
-    playback.set_real_time(False)
-    colorizer = rs.colorizer()
+    depth_sensor = profile.get_device().first_depth_sensor()
+    rs_scale = depth_sensor.get_depth_scale()
 
-    # --- Mapping Initialization (Lazy Load) ---
-    map1, map2 = None, None
+    # ---------------- Initialize DVS ----------------
+    dvs_manager = DvsCameraManager()
+    dvs_manager.update_cameras()
+    if not dvs_manager.get_camera_descs():
+        print("No DVS camera found.")
+        pipeline.stop()
+        return
 
-    print("\nControls: [ESC] Exit | [SPACE] Pause")
+    dvs_cam = dvs_manager.open_camera(dvs_manager.get_camera_descs()[0].serial)
+    dvs_width, dvs_height = dvs_cam.get_width(), dvs_cam.get_height()
+    dvs_cam.start()
+    dvs_cam.set_batch_events_time(EVENT_BATCH_TIME)
+    
+    # ---------------- Video Writer ----------------
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(video_path, fourcc, VIDEO_FPS, (1280, 720))
 
-    rs_start_ts_ms = None
-    ev_start_ts_us = None
-    prev_rs_ts_ms = 0
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Processing on: {device}")
 
     try:
         while True:
-            # 1. Get RS Frames
-            success, frames = pipeline.try_wait_for_frames(timeout_ms=1000)
-            if not success: 
-                print("End of RealSense recording.")
-                break
-            
+            # 1. Get Data
+            frames = pipeline.wait_for_frames()
+            ir_frame = frames.get_infrared_frame(1)
             depth_frame = frames.get_depth_frame()
-            ir_frame = frames.get_infrared_frame(1) # Try Left IR first
-            if not ir_frame: ir_frame = frames.get_infrared_frame(0)
+            if not ir_frame or not depth_frame: continue
 
-            if not depth_frame or not ir_frame: continue
-
-            # 2. Timing
-            current_rs_ts_ms = depth_frame.get_timestamp()
-            if rs_start_ts_ms is None:
-                rs_start_ts_ms = current_rs_ts_ms
-                prev_rs_ts_ms = current_rs_ts_ms
+            ir_img = np.asanyarray(ir_frame.get_data())
+            depth_img = np.asanyarray(depth_frame.get_data())
             
-            elapsed_time_us = int((current_rs_ts_ms - rs_start_ts_ms) * 1000)
+            # Check dimensions just in case
+            h, w = ir_img.shape
+            if h != 720 or w != 1280:
+                print(f"Unexpected resolution: {w}x{h}")
+                continue
 
-            # 3. Process Events
-            if ev_start_ts_us is None:
-                try:
-                    # Use the iterator 'ev_it'
-                    first = next(ev_it)
-                    if len(first) > 0:
-                        ev_start_ts_us = first['t'][0]
-                        event_buffer = first
-                except StopIteration: 
-                    break
-
-            if ev_start_ts_us is not None:
-                target_ev_t = ev_start_ts_us + elapsed_time_us - delta_us
+            events = dvs_cam.get_next_batch()
+            if events['x'].size == 0: continue
                 
-                # Fetch more events if needed
-                buffer_max = event_buffer['t'][-1] if len(event_buffer) > 0 else 0
-                while buffer_max < target_ev_t:
-                    try:
-                        new_batch = next(ev_it)
-                        if len(new_batch) > 0:
-                            event_buffer = np.concatenate((event_buffer, new_batch))
-                            buffer_max = new_batch['t'][-1]
-                        else: break
-                    except StopIteration: break
-                
-                # Process relevant chunk
-                if len(event_buffer) > 0:
-                    split_idx = np.searchsorted(event_buffer['t'], target_ev_t, side='right')
-                    to_process = event_buffer[:split_idx]
-                    event_buffer = event_buffer[split_idx:]
-                    if len(to_process) > 0:
-                        event_frame_gen.process_events(to_process)
-
-            # 4. Prepare Images
-            # --- Depth ---
-            depth_image = np.asanyarray(colorizer.colorize(depth_frame).get_data())
+            xs = torch.from_numpy(events['x'].astype(np.int32)).long()
+            ys = torch.from_numpy(events['y'].astype(np.int32)).long()
+            pols = torch.from_numpy(events['polarity'].astype(np.int32)).long()
             
-            # --- IR ---
-            ir_raw = np.asanyarray(ir_frame.get_data())
-            if ir_raw.dtype == np.uint16:
-                 ir_8bit = cv2.normalize(ir_raw, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-            else:
-                 ir_8bit = ir_raw.astype(np.uint8)
+            dvs_hist = torch.zeros((2, dvs_height, dvs_width), dtype=torch.float32)
+            dvs_hist.index_put_((pols, ys, xs), torch.ones_like(xs, dtype=torch.float32), accumulate=True)
+            dvs_img_raw = (dvs_hist[1] + dvs_hist[0]) 
             
-            # Undistort IR (Left) so it matches the pinhole model K_ir
-            if has_calib:
-                ir_display = cv2.undistort(ir_8bit, K_ir, D_ir)
-            else:
-                ir_display = ir_8bit
+            if dvs_img_raw.max() > 0:
+                dvs_img_raw /= 5.0
+                dvs_img_raw = torch.clamp(dvs_img_raw, 0, 1)
 
-            ir_bgr = cv2.cvtColor(ir_display, cv2.COLOR_GRAY2BGR)
-
-            # --- Events & Alignment ---
-            if event_frame is not None:
-                
-                # Init Mapping Once (needs IR resolution)
-                if has_calib and map1 is None:
-                    ir_h, ir_w = ir_display.shape[:2]
-                    
-                    # LOGIC:
-                    # We are mapping FROM DVS (Source) TO IR (Target).
-                    # 'K_dvs', 'D_dvs' are the source intrinsics.
-                    # 'K_ir' is the new camera matrix (we want DVS to look like IR).
-                    # 'R': We need the rotation that aligns the DVS axes to the IR axes.
-                    # R_stereo is Left->Right. So DVS = R * IR + T.
-                    # To align DVS to IR, we need Inverse Rotation (Transpose).
-                    R_align = R_stereo.T
-
-                    # This creates a lookup map to warp DVS pixels to the IR viewpoint
-                    map1, map2 = cv2.initUndistortRectifyMap(
-                        K_dvs, D_dvs, R_align, K_ir, (ir_w, ir_h), cv2.CV_16SC2
-                    )
-                    print(f"Alignment Map Generated. Output Size: {ir_w}x{ir_h}")
-
-                # If calibration exists, Remap events to overlay
-                if has_calib and map1 is not None:
-                    aligned_events = cv2.remap(event_frame, map1, map2, cv2.INTER_LINEAR)
-                else:
-                    # Fallback
-                    aligned_events = cv2.resize(event_frame, (ir_bgr.shape[1], ir_bgr.shape[0]))
-
-                # --- Visualizations ---
-                mask = np.any(aligned_events > 0, axis=2)
-
-                # 1. IR + Events
-                overlay_ir = ir_bgr.copy()
-                # Blend only where events exist
-                overlay_ir[mask] = cv2.addWeighted(ir_bgr, 0.5, aligned_events, 0.8, 0)[mask]
-                cv2.imshow("Aligned: IR (L) + Events (R)", overlay_ir)
-
-                # 2. Depth + Events
-                # Depth is naturally aligned with Left IR in RS435/455
-                overlay_depth = depth_image.copy()
-                overlay_depth[mask] = cv2.addWeighted(depth_image, 0.5, aligned_events, 0.8, 0)[mask]
-                cv2.imshow("Aligned: Depth (L) + Events (R)", overlay_depth)
-
-                # 3. Raw Events (Reference)
-                cv2.imshow("Raw Events", event_frame)
-
-            # 5. Playback Control
-            dt = current_rs_ts_ms - prev_rs_ts_ms
-            prev_rs_ts_ms = current_rs_ts_ms
+            dvs_gpu = dvs_img_raw.to(device)
             
-            key = cv2.waitKey(max(1, int(dt)))
-            if key == 27: break
-            if key == 32: cv2.waitKey(0)
+            # 2. Prepare Depth
+            scale_conversion = rs_scale * DEPTH_SCALE_FACTOR
+            depth_tensor = torch.from_numpy(depth_img).to(device).float() * scale_conversion
+
+            # 3. Warp
+            # CORRECT CALL: height=720, width=1280 to match IR/Depth image
+            warped_dvs = project_dvs_to_ir_view(
+                dvs_gpu,
+                depth_tensor,
+                calib['K_ir'],
+                calib['K_dvs'],
+                calib['R'],
+                calib['T'],
+                height=720, # Matches ir_img.shape[0]
+                width=1280, # Matches ir_img.shape[1]
+                device=device
+            )
+
+            # 4. Visualize
+            warped_np = warped_dvs.cpu().numpy()
+            warped_u8 = (warped_np * 255).astype(np.uint8)
+            
+            ir_bgr = cv2.cvtColor(ir_img, cv2.COLOR_GRAY2BGR)
+            
+            overlay = ir_bgr.copy()
+            # Add Events (Magenta)
+            overlay[:, :, 0] = cv2.add(overlay[:, :, 0], warped_u8) # Blue
+            overlay[:, :, 2] = cv2.add(overlay[:, :, 2], warped_u8) # Red
+            
+            cv2.imshow("Depth-based Extrinsic Alignment", overlay)
+            out.write(overlay)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
 
     finally:
-        if 'pipeline' in locals():
-            pipeline.stop()
+        pipeline.stop()
+        dvs_cam.stop()
+        out.release()
         cv2.destroyAllWindows()
+        print(f"Saved: {video_path}")
 
 if __name__ == "__main__":
     run()
