@@ -2,17 +2,20 @@ import os
 import numpy as np
 import cv2
 import pyrealsense2 as rs
-from metavision_core.event_io import EventsIterator, LiveReplayEventsIterator, is_live_camera
-
+from metavision_core.event_io import EventsIterator, is_live_camera
 
 
 # =====================================================================
-# MAIN CALIBRATION FUNCTION (called by run())
+# MAIN CALIBRATION FUNCTION
 # =====================================================================
 def run_calibration(prefix, dataset_path):
     """
-    Calibrate time offset between event camera and RealSense camera.
-    Creates <prefix>_delta_seconds.txt inside dataset_path.
+    Calibrate time offset between event camera and RealSense RGB camera.
+    Creates:
+      - <prefix>_delta_seconds.txt
+      - <prefix>_ev_signal.txt
+      - <prefix>_rgb_signal.txt
+    inside dataset_path.
     """
 
     print("\n===============================================")
@@ -33,13 +36,11 @@ def run_calibration(prefix, dataset_path):
         return False
 
     # -----------------------------------------------------
-    # 1. READ EVENT CAM TIME RANGE (RELATIVE)
+    # 1. READ EVENT CAM TIME RANGE
     # -----------------------------------------------------
     print("Reading event timestamp range...")
 
     mv = EventsIterator(event_file, delta_t=1000000)
-    if not is_live_camera(event_file):
-        mv = LiveReplayEventsIterator(mv)
 
     ev_start = None
     ev_end = None
@@ -51,13 +52,17 @@ def run_calibration(prefix, dataset_path):
             ev_start = evs["t"][0]
         ev_end = evs["t"][-1]
 
+    if ev_start is None or ev_end is None:
+        print("❌ No events found.")
+        return False
+
     ev_start_s = ev_start * 1e-6
     ev_end_s   = ev_end * 1e-6
 
     print(f"Event time range: {ev_start_s:.3f} → {ev_end_s:.3f} sec")
 
     # -----------------------------------------------------
-    # 2. READ REALSENSE TIME RANGE (MAKE RELATIVE!)
+    # 2. READ REALSENSE TIME RANGE (RELATIVE)
     # -----------------------------------------------------
     print("Reading RealSense timestamp range...")
 
@@ -65,6 +70,10 @@ def run_calibration(prefix, dataset_path):
     config = rs.config()
     rs.config.enable_device_from_file(config, bag_file, repeat_playback=False)
     profile = pipeline.start(config)
+
+    # IMPORTANT: disable real-time playback to avoid dropped frames
+    playback = profile.get_device().as_playback()
+    playback.set_real_time(False)
 
     rs_start_raw = None
     rs_end_rel = None
@@ -81,8 +90,7 @@ def run_calibration(prefix, dataset_path):
             if rs_start_raw is None:
                 rs_start_raw = ts_raw
 
-            rel_ts = ts_raw - rs_start_raw   # <<<<< FIXED: make relative time
-
+            rel_ts = ts_raw - rs_start_raw
             rs_end_rel = rel_ts
 
     except Exception:
@@ -90,7 +98,11 @@ def run_calibration(prefix, dataset_path):
 
     pipeline.stop()
 
-    print(f"RGB time range (relative): {0.000:.3f} → {rs_end_rel:.3f} sec")
+    if rs_end_rel is None:
+        print("❌ No RGB frames found in RealSense bag.")
+        return False
+
+    print(f"RGB time range (relative): 0.000 → {rs_end_rel:.3f} sec")
 
     # -----------------------------------------------------
     # 3. COMPUTE OVERLAP
@@ -107,7 +119,7 @@ def run_calibration(prefix, dataset_path):
     # -----------------------------------------------------
     # 4. BUILD SIGNAL ARRAYS
     # -----------------------------------------------------
-    fs = 1000  # sampling rate (Hz)
+    fs = 1000  # 1 kHz sampling resolution
     L = int((overlap_end - overlap_start) * fs)
 
     ev_signal  = np.zeros(L)
@@ -119,8 +131,6 @@ def run_calibration(prefix, dataset_path):
     print("Building 1-D event signal...")
 
     mv = EventsIterator(event_file, delta_t=1000000)
-    if not is_live_camera(event_file):
-        mv = LiveReplayEventsIterator(mv)
 
     for evs in mv:
         if evs is None or len(evs) == 0:
@@ -145,6 +155,9 @@ def run_calibration(prefix, dataset_path):
     rs.config.enable_device_from_file(config, bag_file, repeat_playback=False)
     profile = pipeline.start(config)
 
+    playback = profile.get_device().as_playback()
+    playback.set_real_time(False)
+
     prev_gray = None
 
     try:
@@ -155,7 +168,7 @@ def run_calibration(prefix, dataset_path):
                 break
 
             ts_raw = c.get_timestamp() * 0.001
-            rel_ts = ts_raw - rs_start_raw   # <<<<< FIXED
+            rel_ts = ts_raw - rs_start_raw
 
             if not (overlap_start <= rel_ts < overlap_end):
                 continue
@@ -178,12 +191,19 @@ def run_calibration(prefix, dataset_path):
     pipeline.stop()
 
     # -----------------------------------------------------
-    # 7. CROSS-CORRELATION
+    # 7. CROSS-CORRELATION (NORMALIZED)
     # -----------------------------------------------------
     print("Computing cross-correlation...")
 
     a = ev_signal - ev_signal.mean()
     b = rgb_signal - rgb_signal.mean()
+
+    if np.std(a) == 0 or np.std(b) == 0:
+        print("❌ One of the signals is zero. Cannot correlate.")
+        return False
+
+    a /= np.std(a)
+    b /= np.std(b)
 
     corr = np.correlate(a, b, mode="full")
     lag = corr.argmax() - (L - 1)
@@ -191,31 +211,41 @@ def run_calibration(prefix, dataset_path):
     delta_seconds = lag / fs
 
     print(f"\nEstimated Δt = {delta_seconds:.6f} seconds")
-    print("Positive Δt means EVENT stream is ahead of RGB.")
+    print("Positive Δt → EVENT stream is ahead of RGB.")
 
     # -----------------------------------------------------
-    # 8. SAVE FILE
+    # 8. SAVE DELTA TIME
     # -----------------------------------------------------
     out_file = os.path.join(dataset_path, f"{prefix}_delta_seconds.txt")
-
     with open(out_file, "w") as f:
         f.write(f"{delta_seconds:.9f}\n")
 
     print(f"Saved calibration to: {out_file}")
+
+    # -----------------------------------------------------
+    # 9. SAVE SIGNALS (OPTION 1)
+    # -----------------------------------------------------
+    print("Saving EV/RGB signals for ChatGPT plotting...")
+
+    ev_file = os.path.join(dataset_path, f"{prefix}_ev_signal.txt")
+    rgb_file = os.path.join(dataset_path, f"{prefix}_rgb_signal.txt")
+
+    np.savetxt(ev_file, ev_signal)
+    np.savetxt(rgb_file, rgb_signal)
+
+    print(f"Saved event signal: {ev_file}")
+    print(f"Saved RGB signal:   {rgb_file}")
+    print("Upload these files here to generate the real cross-correlation plot.\n")
+
     print("===============================================\n")
 
     return True
 
 
-
 # =====================================================================
-# WRAPPER FUNCTION USED BY MENU
+# WRAPPER FUNCTION
 # =====================================================================
 def run():
-    """
-    Wrapper for your main menu system.
-    It automatically calibrates prefix '0001' in folder 'dataset'.
-    """
     dataset_path = "dataset"
     prefix = "0001"
 
@@ -231,11 +261,8 @@ def run():
         print("Calibration failed.\n")
 
 
-
 # =====================================================================
-# Allow direct execution for testing:
-# python calibrate_frame_level_offset.py
+# MAIN ENTRY
 # =====================================================================
 if __name__ == "__main__":
     run()
-
