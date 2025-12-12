@@ -7,26 +7,52 @@ from metavision_core.event_io import EventsIterator, LiveReplayEventsIterator, i
 from metavision_sdk_core import PeriodicFrameGenerationAlgorithm, ColorPalette
 
 # --- 1. SPATIAL ALIGNMENT (Calibration Loading) ---
+# Custom loader/constructor logic to handle OpenCV's specific YAML format (!!opencv-matrix)
+# This section must be outside the function for correct PyYAML registration.
+
+class OpenCVLoader(yaml.FullLoader):
+    """Custom YAML Loader inheriting from FullLoader for OpenCV data."""
+    pass
+
+def opencv_matrix_constructor(loader, node):
+    """Constructor to convert OpenCV YAML matrix into a NumPy array."""
+    mapping = loader.construct_mapping(node, deep=True)
+    rows = mapping['rows']
+    cols = mapping['cols']
+    data = mapping['data']
+    # Ensure data is treated as floating point numbers (dt: d)
+    return np.array(data, dtype=np.float64).reshape(rows, cols)
+
+# Register the custom constructor with the new loader class
+yaml.add_constructor('!opencv-matrix', opencv_matrix_constructor, Loader=OpenCVLoader)
+yaml.add_constructor('tag:yaml.org,2002:opencv-matrix', opencv_matrix_constructor, Loader=OpenCVLoader)
 
 def load_calibration_data(filepath):
-    """Loads OpenCV matrices from the YAML file."""
-    with open(filepath, 'r') as f:
-        # Custom loader to handle OpenCV matrix structure
-        def opencv_matrix_constructor(loader, node):
-            mapping = loader.construct_mapping(node, deep=True)
-            rows = mapping['rows']
-            cols = mapping['cols']
-            data = mapping['data']
-            return np.array(data).reshape(rows, cols)
+    """Loads calibration matrices from the YAML file using the custom loader."""
+    
+    # Resolve the path to be absolute, starting from the script's directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    full_path = os.path.join(script_dir, filepath)
+    
+    # Since the YAML file is outside the 'camera_feature' directory, adjust the path
+    # If the file is 'sibling' to 'camera_feature', we need to go up one level.
+    # We use os.path.join and os.pardir to handle this robustly.
+    
+    # Assumes stereo_calibration_checkerboard.yaml is a sibling of camera_feature/
+    calib_dir = os.path.abspath(os.path.join(script_dir, os.pardir))
+    full_path = os.path.join(calib_dir, "stereo_calibration_checkerboard.yaml")
+    
+    if not os.path.exists(full_path):
+        print(f"Error: Calibration file not found at expected path: {full_path}")
+        return None, None, None, None, None, None
 
-        yaml.add_constructor('!opencv-matrix', opencv_matrix_constructor)
-
-        calib_data = yaml.load(f, Loader=yaml.FullLoader)
-        
+    with open(full_path, 'r') as f:
         try:
-            calib_data = yaml.load(f, Loader=yaml.FullLoader)
+            # Use the custom OpenCVLoader
+            calib_data = yaml.load(f, Loader=OpenCVLoader)
         except Exception as e:
-            print(f"Error loading calibration YAML: {e}")
+            # We skip the error printing here to prevent confusing duplicate messages
+            print(f"Critical YAML loading error: {e}")
             return None, None, None, None, None, None
 
     # Extract and rename for clarity
@@ -39,9 +65,10 @@ def load_calibration_data(filepath):
 
     return K_dvs, D_dvs, K_ir, D_ir, R_ir_to_dvs, T_ir_to_dvs
 
+
 def project_dvs_to_ir(dvs_points, K_dvs, D_dvs, K_ir, D_ir, R_ir_to_dvs, T_ir_to_dvs):
     """
-    Takes 2D DVS pixel coordinates and projects them onto the IR camera's image plane.
+    Projects 2D DVS pixel coordinates onto the IR camera's image plane.
     
     Args:
         dvs_points (np.array): Nx2 array of DVS pixel coordinates (x, y).
@@ -51,9 +78,7 @@ def project_dvs_to_ir(dvs_points, K_dvs, D_dvs, K_ir, D_ir, R_ir_to_dvs, T_ir_to
         np.array: Nx2 array of projected IR pixel coordinates.
     """
     
-    # 1. Undistort DVS points (get them into normalized coordinate system)
-    # The 'None' is for the optional R matrix (rectification)
-    # The output is Nx1x2
+    # 1. Undistort DVS points (normalize coordinates)
     undistorted_dvs_points = cv2.undistortPoints(
         dvs_points.reshape(-1, 1, 2), K_dvs, D_dvs, R=None, P=K_dvs
     )
@@ -62,8 +87,7 @@ def project_dvs_to_ir(dvs_points, K_dvs, D_dvs, K_ir, D_ir, R_ir_to_dvs, T_ir_to
     R_dvs_to_ir = R_ir_to_dvs.T # R is IR -> DVS, so R.T is DVS -> IR
     T_dvs_to_ir = -R_ir_to_dvs.T @ T_ir_to_dvs
 
-    # 3. Prepare 3D points in DVS frame (assuming Z=1, as we are projecting rays)
-    # The points are taken from the normalized plane (output of undistortPoints)
+    # 3. Prepare 3D points in DVS frame (assuming Z=1 plane)
     points_3d_dvs = np.hstack((undistorted_dvs_points.reshape(-1, 2), np.ones((len(dvs_points), 1))))
     
     # 4. Project 3D points from DVS frame to IR image plane
@@ -77,17 +101,21 @@ def project_dvs_to_ir(dvs_points, K_dvs, D_dvs, K_ir, D_ir, R_ir_to_dvs, T_ir_to
 
     return ir_pixels.reshape(-1, 2)
 
-# --- 2. MAIN PLAYBACK LOGIC ---
+# --- 2. MAIN PLAYBACK LOGIC (Time and Spatial Alignment) ---
 
 def run():
-    # Configuration
-    dataset_path = "dataset"
-    calib_file = "stereo_calibration_checkerboard.yaml" # Your calibration file name
+    # Configuration based on the confirmed hierarchy:
+    # 'dataset' and 'stereo_calibration_checkerboard.yaml' are siblings of 'camera_feature'
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.abspath(os.path.join(script_dir, os.pardir))
+    
+    dataset_path = os.path.join(parent_dir, "dataset") 
+    calib_file_placeholder = "stereo_calibration_checkerboard.yaml" # Used internally in load_calibration_data
     
     # --- Load Calibration ---
-    K_dvs, D_dvs, K_ir, D_ir, R, T = load_calibration_data(calib_file)
+    K_dvs, D_dvs, K_ir, D_ir, R, T = load_calibration_data(calib_file_placeholder)
     if K_dvs is None:
-        print(f"Failed to load calibration data from {calib_file}.")
+        print("Failed to load calibration data. Please check YAML syntax and file path.")
         return
 
     # Extract unique prefixes
@@ -100,7 +128,7 @@ def run():
     prefixes = sorted(list(prefixes))
 
     if not prefixes:
-        print("No recordings found in dataset. Please create a 'dataset' folder and place files inside.")
+        print(f"No recordings found in dataset directory: {dataset_path}")
         return
 
     print("\nAvailable recordings:")
@@ -115,7 +143,7 @@ def run():
     selected_prefix = prefixes[int(choice) - 1]
     print(f"\nPlaying recording: {selected_prefix}\n")
 
-    # Paths
+    # Paths for selected recording
     event_file = os.path.join(dataset_path, f"{selected_prefix}_event.raw")
     bag_file = os.path.join(dataset_path, f"{selected_prefix}_realsense.bag")
     delta_file = os.path.join(dataset_path, f"{selected_prefix}_delta_seconds.txt")
@@ -142,25 +170,10 @@ def run():
 
     if os.path.exists(event_file):
         mv_iterator = EventsIterator(input_path=event_file, delta_t=10000)
-        height, width = mv_iterator.get_size()
+        # Note: DVS resolution (height, width) is derived here, but the event_frame
+        # will be generated at IR_HEIGHT x IR_WIDTH after the first RealSense frame is read.
         if not is_live_camera(event_file):
             mv_iterator = LiveReplayEventsIterator(mv_iterator)
-
-        # The frame generator height/width must match the target (IR) resolution
-        # We will use the IR intrinsics matrix to determine the output size
-        # K_ir[1,2]*2 and K_ir[0,2]*2 gives the approximate sensor size
-        # A safer method is to wait for the first IR frame
-        
-        # Initialize Event Frame (size based on DVS intrinsics for the undistort step)
-        event_frame_dvs_size = np.zeros((height, width, 3), dtype=np.uint8)
-
-        def on_cd_frame_cb(ts, cd_frame):
-            nonlocal event_frame_dvs_size
-            # Use decay for visualization
-            alpha = 0.5
-            event_frame_dvs_size = cv2.addWeighted(event_frame_dvs_size, alpha, cd_frame, 1 - alpha, 0)
-        
-        # We process events first, then warp the resulting image/points
 
         ev_iter = iter(mv_iterator)
     else:
@@ -195,8 +208,8 @@ def run():
     # -------------------------------
     # Playback loop with timestamp and spatial alignment
     # -------------------------------
-    start_real_ts = None  # first RealSense timestamp (ms)
-    leftover_events = None # Buffer for events read ahead of current frame
+    start_real_ts = None
+    leftover_events = None 
 
     try:
         while True:
@@ -217,12 +230,13 @@ def run():
                     
                     if IR_HEIGHT == 0:
                         IR_HEIGHT, IR_WIDTH = color_image.shape[:2]
-                        # Set up the event frame generator now that we know the target resolution
+                        
+                        # Initialize frame generator to the target (IR) resolution
                         event_frame_gen = PeriodicFrameGenerationAlgorithm(sensor_width=IR_WIDTH,
                                                                            sensor_height=IR_HEIGHT,
                                                                            fps=60,
                                                                            palette=ColorPalette.Dark)
-                        # We change the callback to use the final warped image
+                        # Initialize event frame to the target resolution
                         event_frame = np.zeros((IR_HEIGHT, IR_WIDTH, 3), dtype=np.uint8)
                         
                         def on_cd_frame_cb_warped(ts, cd_frame):
@@ -236,23 +250,21 @@ def run():
 
                 if depth_frame:
                     depth_color = np.asanyarray(colorizer.colorize(depth_frame).get_data())
-                    real_ts = depth_frame.get_timestamp()  # ms
+                    real_ts = depth_frame.get_timestamp()
                     if start_real_ts is None:
                         start_real_ts = real_ts
 
-                    # Convert RealSense timestamp to µs relative to start
                     t_rs = int((real_ts - start_real_ts) * 1000)
 
             if pipeline and real_ts is None:
-                 # RealSense is running but no valid frame for timestamp alignment
                  continue
                  
             # ---------------- Event accumulation (Time Alignment) ----------------
             last_event_ts = None
             events_in_frame = 0
+            accumulated_events = []
             
             if mv_iterator and real_ts is not None:
-                accumulated_events = []
                 
                 # 1. Start with leftovers if they exist
                 current_chunk = None
@@ -284,7 +296,7 @@ def run():
                         accumulated_events.append(current_chunk)
                         last_event_ts = ev_ts_aligned[-1]
                         events_in_frame += current_chunk.size
-                        current_chunk = None # Consumed, get new one
+                        current_chunk = None
                     else:
                         # Case B: Chunk crosses the timeline. Split it.
                         mask = ev_ts_aligned <= t_rs
@@ -298,7 +310,7 @@ def run():
                         
                         # Future part (save for next frame)
                         leftover_events = current_chunk[~mask]
-                        break # Done for this frame
+                        break
 
             # ---------------- Spatial Alignment & Visualization ----------------
             if accumulated_events and event_frame_gen:
@@ -308,7 +320,6 @@ def run():
                 dvs_points = np.stack((combined_events['x'], combined_events['y']), axis=1).astype(np.float32)
                 
                 # 1. Project DVS points to IR image plane
-                # We need the events to be projected to the IR frame before being fed to the frame generator
                 ir_points = project_dvs_to_ir(dvs_points, K_dvs, D_dvs, K_ir, D_ir, R, T)
                 
                 # 2. Clip points to IR boundaries and create a new event array
@@ -332,14 +343,12 @@ def run():
             if color_frame is not None:
                 overlay = color_image.copy()
                 if event_frame is not None:
-                    # event_frame is already the right size (IR_HEIGHT x IR_WIDTH)
                     cv2.addWeighted(event_frame, 0.7, overlay, 0.3, 0, overlay)
                 cv2.imshow("Aligned RGB + Event Overlay", overlay)
 
             if depth_frame is not None:
                 cv2.imshow("Depth Stream", depth_color)
             
-            # The 'Event Stream' window is now the warped/projected event map
             if event_frame is not None:
                 cv2.imshow("Projected Event Stream", event_frame)
 
