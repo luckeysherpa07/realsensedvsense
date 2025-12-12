@@ -59,7 +59,8 @@ def run():
     event_frame = None
     event_start_ts = None
     if os.path.exists(event_file):
-        mv_iterator = EventsIterator(input_path=event_file, delta_t=1000)
+        # CHANGED: delta_t from 1000 to 10000 (10ms) to reduce loop overhead
+        mv_iterator = EventsIterator(input_path=event_file, delta_t=10000)
         height, width = mv_iterator.get_size()
         if not is_live_camera(event_file):
             mv_iterator = LiveReplayEventsIterator(mv_iterator)
@@ -84,12 +85,25 @@ def run():
     # -------------------------------
     # RealSense bag setup
     # -------------------------------
+    # -------------------------------
+    # RealSense bag setup
+    # -------------------------------
     pipeline = None
     if os.path.exists(bag_file):
         pipeline = rs.pipeline()
         config = rs.config()
-        rs.config.enable_device_from_file(config, bag_file)
+        
+        # Disable repeat to avoid confusion at end of file
+        config.enable_device_from_file(bag_file, repeat_playback=False) 
+        
         pipeline_profile = pipeline.start(config)
+
+        # --- CRITICAL FIX: Disable Real-Time Playback ---
+        # This forces the bag to play frame-by-frame, waiting for your processing
+        playback = pipeline_profile.get_device().as_playback()
+        playback.set_real_time(False) 
+        # ------------------------------------------------
+        
         colorizer = rs.colorizer()
 
     print("Press ESC to exit any window.")
