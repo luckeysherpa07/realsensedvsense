@@ -46,11 +46,11 @@ def run():
         with open(delta_file, "r") as f:
             delta_seconds = float(f.read().strip())
         print(f"Calibration offset (delta_seconds) read from file: {delta_seconds} s")
-        print("Sign convention: Δt = t_event - t_realsense")
+        print("Sign convention: Δt = lag from cross-correlation (event vs RGB)")
         if delta_seconds > 0:
-            print("Events are physically later than RealSense; shift events backward to align.")
+            print("Event stream lags RGB; shift events earlier to align.")
         else:
-            print("Events are physically earlier than RealSense; shift events forward to align.")
+            print("Event stream leads RGB; shift events later to align.")
 
     # -------------------------------
     # Event iterator setup
@@ -140,7 +140,7 @@ def run():
                         event_start_ts = evs["t"][0]
 
                     # Align event timestamps relative to first event and apply delta_seconds
-                    ev_ts_aligned = evs["t"] - event_start_ts + int(delta_seconds * 1e6)
+                    ev_ts_aligned = evs["t"] - event_start_ts - int(delta_seconds * 1e6)
 
                     # Accumulate only events up to current RS timestamp
                     if pipeline and real_ts is not None:
