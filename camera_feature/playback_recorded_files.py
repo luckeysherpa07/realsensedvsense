@@ -36,7 +36,8 @@ def run():
         return
 
     selected_prefix = prefixes[int(choice) - 1]
-    print(f"\nPlaying recording with IR Overlay: {selected_prefix}\n")
+    print(f"\nPlaying recording: {selected_prefix}")
+    print("Windows: [Event Stream] [IR+Event] [Depth+Event]")
 
     # Paths
     event_file = os.path.join(dataset_path, f"{selected_prefix}_event.raw")
@@ -95,8 +96,6 @@ def run():
         config.enable_device_from_file(bag_file, repeat_playback=False)
         
         profile = pipeline.start(config)
-        
-        # Disable real-time playback for frame-by-frame sync
         playback = profile.get_device().as_playback()
         playback.set_real_time(False)
         
@@ -119,9 +118,7 @@ def run():
             frames = pipeline.wait_for_frames()
             
             depth_frame = frames.get_depth_frame()
-            
-            # --- CHANGED: Get IR Frame instead of Color ---
-            # Try getting Left IR (index 1), fallback to index 0
+            # Get IR Frame
             ir_frame = frames.get_infrared_frame(1)
             if not ir_frame:
                 ir_frame = frames.get_infrared_frame(0)
@@ -137,18 +134,15 @@ def run():
             elapsed_time_us = int((current_rs_ts_ms - rs_start_ts_ms) * 1000)
 
             # Process Images
+            # 1. Depth (Colorized)
             depth_color = np.asanyarray(colorizer.colorize(depth_frame).get_data())
             
-            # Process IR Image
+            # 2. IR (Normalized & BGR)
             ir_image_raw = np.asanyarray(ir_frame.get_data())
-            
-            # Normalize IR if it is 16-bit to make it visible
             if ir_image_raw.dtype == np.uint16:
                 ir_image_8bit = cv2.normalize(ir_image_raw, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
             else:
                 ir_image_8bit = ir_image_raw.astype(np.uint8)
-
-            # Convert Grayscale IR to BGR (3 channels) so we can overlay colored events
             ir_bgr = cv2.cvtColor(ir_image_8bit, cv2.COLOR_GRAY2BGR)
 
             # B. Process Events up to this timestamp
@@ -197,24 +191,35 @@ def run():
                         if len(events_to_process) > 0:
                             event_frame_gen.process_events(events_to_process)
 
-            # C. Visualization (IR Overlay)
-            if ir_bgr is not None:
-                overlay = ir_bgr.copy()
-                
-                if event_frame is not None:
-                    # Resize event frame to match IR if necessary
-                    if event_frame.shape[:2] != overlay.shape[:2]:
-                        ev_vis = cv2.resize(event_frame, (overlay.shape[1], overlay.shape[0]))
-                    else:
-                        ev_vis = event_frame
-                    
-                    # Create the overlay
-                    cv2.addWeighted(ev_vis, 0.7, overlay, 0.5, 0, overlay)
-                    
-                    cv2.imshow("Event Stream", ev_vis)
+            # C. Visualization
+            if event_frame is not None:
+                # ---------------- Window 1: Event Stream ----------------
+                cv2.imshow("Event Stream", event_frame)
 
-                cv2.imshow("IR + Event Overlay", overlay)
-                cv2.imshow("Depth Stream", depth_color)
+                # ---------------- Window 2: IR + Event Overlay ----------------
+                if ir_bgr is not None:
+                    ir_overlay = ir_bgr.copy()
+                    # Resize event frame to match IR
+                    if event_frame.shape[:2] != ir_overlay.shape[:2]:
+                        ev_vis_ir = cv2.resize(event_frame, (ir_overlay.shape[1], ir_overlay.shape[0]))
+                    else:
+                        ev_vis_ir = event_frame
+                    
+                    cv2.addWeighted(ev_vis_ir, 0.7, ir_overlay, 0.5, 0, ir_overlay)
+                    cv2.imshow("IR + Event Overlay", ir_overlay)
+
+                # ---------------- Window 3: Depth + Event Overlay ----------------
+                if depth_color is not None:
+                    depth_overlay = depth_color.copy()
+                    # Resize event frame to match Depth
+                    if event_frame.shape[:2] != depth_overlay.shape[:2]:
+                        ev_vis_depth = cv2.resize(event_frame, (depth_overlay.shape[1], depth_overlay.shape[0]))
+                    else:
+                        ev_vis_depth = event_frame
+
+                    # Blend (Events tend to be bright, Depth map is colorful, 0.7/0.5 mix usually works)
+                    cv2.addWeighted(ev_vis_depth, 0.7, depth_overlay, 0.5, 0, depth_overlay)
+                    cv2.imshow("Depth + Event Overlay", depth_overlay)
 
             key = cv2.waitKey(1)
             if key == 27:
