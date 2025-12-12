@@ -8,7 +8,7 @@ from dvsense_driver.camera_manager import DvsCameraManager
 
 # ---------------- CONFIGURATION ----------------
 EVENT_BATCH_TIME = 10000     # 10ms accumulation
-DEPTH_SCALE_FACTOR = 100.0   # RealSense (m) -> Calibration (cm). 1m = 100cm.
+DEPTH_SCALE_FACTOR = 100.0   # RealSense (m) -> Calibration (cm)
 VIDEO_FPS = 30
 
 def load_calibration_yaml(filepath):
@@ -18,10 +18,10 @@ def load_calibration_yaml(filepath):
     fs = cv2.FileStorage(filepath, cv2.FILE_STORAGE_READ)
     
     def get_mat(node_name):
-        mat = fs.getNode(node_name).mat()
-        if mat is None:
+        node = fs.getNode(node_name)
+        if node.isNone():
             raise ValueError(f"Could not find {node_name} in YAML.")
-        return mat
+        return node.mat()
 
     calib = {}
     calib['K_dvs'] = get_mat("DVS_intrinsics")
@@ -34,40 +34,59 @@ def load_calibration_yaml(filepath):
     fs.release()
     return calib
 
-def project_dvs_to_ir_view(dvs_img_tensor, depth_tensor, K_ir, K_dvs, R, T, height, width, device='cuda'):
+def apply_distortion_torch(x, y, D):
     """
-    Warps the DVS image to match the IR camera view using Depth.
-    Performed on GPU for speed.
+    Applies distortion (k1, k2, p1, p2, k3) to normalized coordinates (x, y).
     """
-    # 1. Create Grid Manually to ensure (Height, Width) dimensions
-    # height should be 720, width should be 1280
+    # Extract coefficients
+    k1, k2, p1, p2, k3 = D[0], D[1], D[2], D[3], D[4]
+    
+    r2 = x*x + y*y
+    r4 = r2*r2
+    r6 = r2*r4
+    
+    # Radial distortion
+    radial = 1.0 + k1*r2 + k2*r4 + k3*r6
+    
+    # Tangential distortion
+    dx = 2.0*p1*x*y + p2*(r2 + 2.0*x*x)
+    dy = p1*(r2 + 2.0*y*y) + 2.0*p2*x*y
+    
+    x_dist = x * radial + dx
+    y_dist = y * radial + dy
+    
+    return x_dist, y_dist
+
+def project_dvs_to_ir_view(dvs_img_tensor, depth_tensor, K_ir, K_dvs, D_dvs, R, T, height, width, device='cuda'):
+    """
+    Warps the DVS image to match the IR camera view using Depth, Intrinsics, and Distortion.
+    """
+    # 1. Create Grid
     rows = torch.arange(height, device=device, dtype=torch.float32)
     cols = torch.arange(width, device=device, dtype=torch.float32)
-    
-    # y: varies down rows (720, 1280)
-    y = rows.view(-1, 1).repeat(1, width)
-    # x: varies across columns (720, 1280)
-    x = cols.view(1, -1).repeat(height, 1)
+    y, x = torch.meshgrid(rows, cols, indexing='ij')
 
     # Unpack Intrinsics (IR)
-    fx_ir, fy_ir = K_ir[0, 0], K_ir[1, 1]
-    cx_ir, cy_ir = K_ir[0, 2], K_ir[1, 2]
+    fx_ir, fy_ir = float(K_ir[0, 0]), float(K_ir[1, 1])
+    cx_ir, cy_ir = float(K_ir[0, 2]), float(K_ir[1, 2])
     
     # Unpack Intrinsics (DVS)
-    fx_dvs, fy_dvs = K_dvs[0, 0], K_dvs[1, 1]
-    cx_dvs, cy_dvs = K_dvs[0, 2], K_dvs[1, 2]
+    fx_dvs, fy_dvs = float(K_dvs[0, 0]), float(K_dvs[1, 1])
+    cx_dvs, cy_dvs = float(K_dvs[0, 2]), float(K_dvs[1, 2])
 
     # 2. Back-project IR pixels to 3D point cloud (P_ir)
-    Z = depth_tensor # Expecting (720, 1280)
+    Z = depth_tensor
     
-    # x, y, Z must all be (720, 1280)
+    # Mask invalid depth to avoid projecting garbage
+    valid_mask = (Z > 0.01)
+    
     X = (x - cx_ir) * Z / fx_ir
     Y = (y - cy_ir) * Z / fy_ir
     
-    # Shape: (3, H*W)
+    # Flatten: (3, N)
     P_ir = torch.stack((X, Y, Z), dim=0).reshape(3, -1)
     
-    # 3. Transform to DVS Coordinate System: P_dvs = R * P_ir + T
+    # 3. Transform to DVS Coordinate System
     R_torch = torch.from_numpy(R).to(device).float()
     T_torch = torch.from_numpy(T).to(device).float()
     
@@ -78,19 +97,26 @@ def project_dvs_to_ir_view(dvs_img_tensor, depth_tensor, K_ir, K_dvs, R, T, heig
     Y_dvs = P_dvs[1, :]
     Z_dvs = P_dvs[2, :]
     
-    # Avoid division by zero
     Z_dvs[Z_dvs == 0] = 1e-6
     
-    u_dvs = (X_dvs / Z_dvs) * fx_dvs + cx_dvs
-    v_dvs = (Y_dvs / Z_dvs) * fy_dvs + cy_dvs
+    x_norm = X_dvs / Z_dvs
+    y_norm = Y_dvs / Z_dvs
     
-    # 5. Sample from Source DVS Image
+    # 5. Apply DVS Lens Distortion
+    D_vals = D_dvs.flatten() if hasattr(D_dvs, 'flatten') else D_dvs
+    x_dist, y_dist = apply_distortion_torch(x_norm, y_norm, D_vals)
+    
+    # 6. Convert to Pixels
+    u_dvs = x_dist * fx_dvs + cx_dvs
+    v_dvs = y_dist * fy_dvs + cy_dvs
+    
+    # 7. Sample from Source DVS Image
     dvs_H, dvs_W = dvs_img_tensor.shape
     
-    u_norm = (u_dvs / (dvs_W - 1)) * 2 - 1
-    v_norm = (v_dvs / (dvs_H - 1)) * 2 - 1
+    u_grid = (u_dvs / (dvs_W - 1)) * 2 - 1
+    v_grid = (v_dvs / (dvs_H - 1)) * 2 - 1
     
-    grid = torch.stack((u_norm, v_norm), dim=1).reshape(1, height, width, 2)
+    grid = torch.stack((u_grid, v_grid), dim=1).reshape(1, height, width, 2)
     
     dvs_batch = dvs_img_tensor.unsqueeze(0).unsqueeze(0) 
     
@@ -98,7 +124,10 @@ def project_dvs_to_ir_view(dvs_img_tensor, depth_tensor, K_ir, K_dvs, R, T, heig
         dvs_batch, grid, mode='bilinear', padding_mode='zeros', align_corners=True
     )
     
-    return warped_dvs.squeeze()
+    warped_dvs = warped_dvs.squeeze()
+    warped_dvs = warped_dvs * valid_mask # Apply depth mask
+    
+    return warped_dvs
 
 def run():
     base_dir = os.path.dirname(os.path.abspath(__file__))      
@@ -108,6 +137,8 @@ def run():
     dataset_dir = os.path.join(parent_dir, "dataset")
     os.makedirs(dataset_dir, exist_ok=True)
     
+    # We will save the IR overlay video only (as per original logic), 
+    # but display both windows.
     video_path = os.path.join(dataset_dir, "overlay_result.mp4")
     print(f"Loading calibration from: {calib_path}")
     
@@ -122,6 +153,9 @@ def run():
     config = rs.config()
     config.enable_stream(rs.stream.infrared, 1, 1280, 720, rs.format.y8, 30)
     config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
+    
+    # Helper to colorize depth for visualization
+    colorizer = rs.colorizer()
     
     print("Starting RealSense...")
     profile = pipeline.start(config)
@@ -148,9 +182,12 @@ def run():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Processing on: {device}")
 
+    dvs_hist_gpu = torch.zeros((2, dvs_height, dvs_width), dtype=torch.float32, device=device)
+    ones_gpu = None 
+
     try:
         while True:
-            # 1. Get Data
+            # 1. Get RealSense Data
             frames = pipeline.wait_for_frames()
             ir_frame = frames.get_infrared_frame(1)
             depth_frame = frames.get_depth_frame()
@@ -159,60 +196,83 @@ def run():
             ir_img = np.asanyarray(ir_frame.get_data())
             depth_img = np.asanyarray(depth_frame.get_data())
             
-            # Check dimensions just in case
-            h, w = ir_img.shape
-            if h != 720 or w != 1280:
-                print(f"Unexpected resolution: {w}x{h}")
-                continue
+            # Generate colorized depth map for visualization
+            depth_color_frame = colorizer.colorize(depth_frame)
+            depth_color_img = np.asanyarray(depth_color_frame.get_data())
 
+            # 2. Get DVS Data & Accumulate
             events = dvs_cam.get_next_batch()
-            if events['x'].size == 0: continue
+            dvs_hist_gpu.zero_()
+            
+            if events['x'].size > 0:
+                xs = torch.from_numpy(events['x'].astype(np.int64)).to(device)
+                ys = torch.from_numpy(events['y'].astype(np.int64)).to(device)
+                pols = torch.from_numpy(events['polarity'].astype(np.int64)).to(device)
                 
-            xs = torch.from_numpy(events['x'].astype(np.int32)).long()
-            ys = torch.from_numpy(events['y'].astype(np.int32)).long()
-            pols = torch.from_numpy(events['polarity'].astype(np.int32)).long()
-            
-            dvs_hist = torch.zeros((2, dvs_height, dvs_width), dtype=torch.float32)
-            dvs_hist.index_put_((pols, ys, xs), torch.ones_like(xs, dtype=torch.float32), accumulate=True)
-            dvs_img_raw = (dvs_hist[1] + dvs_hist[0]) 
-            
+                if ones_gpu is None or ones_gpu.shape[0] != xs.shape[0]:
+                    ones_gpu = torch.ones(xs.shape[0], dtype=torch.float32, device=device)
+                
+                dvs_hist_gpu.index_put_((pols, ys, xs), ones_gpu, accumulate=True)
+
+            dvs_img_raw = (dvs_hist_gpu[1] + dvs_hist_gpu[0]) 
             if dvs_img_raw.max() > 0:
                 dvs_img_raw /= 5.0
                 dvs_img_raw = torch.clamp(dvs_img_raw, 0, 1)
-
-            dvs_gpu = dvs_img_raw.to(device)
             
-            # 2. Prepare Depth
+            # 3. Prepare Depth Tensor
             scale_conversion = rs_scale * DEPTH_SCALE_FACTOR
             depth_tensor = torch.from_numpy(depth_img).to(device).float() * scale_conversion
 
-            # 3. Warp
-            # CORRECT CALL: height=720, width=1280 to match IR/Depth image
+            # 4. Warp DVS
             warped_dvs = project_dvs_to_ir_view(
-                dvs_gpu,
+                dvs_img_raw,
                 depth_tensor,
                 calib['K_ir'],
                 calib['K_dvs'],
+                calib['D_dvs'],
                 calib['R'],
                 calib['T'],
-                height=720, # Matches ir_img.shape[0]
-                width=1280, # Matches ir_img.shape[1]
+                height=720,
+                width=1280,
                 device=device
             )
 
-            # 4. Visualize
+            # 5. Prepare Visualizations
             warped_np = warped_dvs.cpu().numpy()
             warped_u8 = (warped_np * 255).astype(np.uint8)
+            mask_indices = warped_u8 > 0
             
+            # --- Window 1: IR + Events (Magenta) ---
             ir_bgr = cv2.cvtColor(ir_img, cv2.COLOR_GRAY2BGR)
+            ir_overlay = ir_bgr.copy()
+
+             # FIX: Add .flatten() or .squeeze() to the cv2.add result
+            if np.any(mask_indices):
+                # Blue Channel
+                ir_overlay[mask_indices, 0] = cv2.add(
+                    ir_overlay[mask_indices, 0], 
+                    warped_u8[mask_indices]
+                ).flatten() 
+                
+                # Red Channel
+                ir_overlay[mask_indices, 2] = cv2.add(
+                    ir_overlay[mask_indices, 2], 
+                    warped_u8[mask_indices]
+                ).flatten()
+
+            # --- Window 2: Depth + Events (White) ---
+            # Depth map is already colorful (Jet usually). We add White events to make them pop.
+            depth_overlay = depth_color_img.copy()
+            depth_overlay[:, :, 0] = cv2.add(depth_overlay[:, :, 0], warped_u8)
+            depth_overlay[:, :, 1] = cv2.add(depth_overlay[:, :, 1], warped_u8)
+            depth_overlay[:, :, 2] = cv2.add(depth_overlay[:, :, 2], warped_u8)
+
+            # Show windows
+            cv2.imshow("IR & Event Alignment", ir_overlay)
+            cv2.imshow("Depth & Event Alignment", depth_overlay)
             
-            overlay = ir_bgr.copy()
-            # Add Events (Magenta)
-            overlay[:, :, 0] = cv2.add(overlay[:, :, 0], warped_u8) # Blue
-            overlay[:, :, 2] = cv2.add(overlay[:, :, 2], warped_u8) # Red
-            
-            cv2.imshow("Depth-based Extrinsic Alignment", overlay)
-            out.write(overlay)
+            # Save IR result to file
+            out.write(ir_overlay)
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
