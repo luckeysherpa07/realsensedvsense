@@ -1,4 +1,3 @@
-%YAML:1.0
 ---
 DVS_intrinsics: !!opencv-matrix
    rows: 3
