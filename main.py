@@ -13,7 +13,7 @@ from camera_feature import display_depth_ir_difference_view
 from camera_feature import record_depth_ir_rgb_event
 from camera_feature import playback_recorded_files
 from camera_feature import calibrate_frame_level_offset
-from camera_feature import playback_spatial_aligned_file
+from camera_feature import display_spatial_aligned_view
 
 def main():
     options = {
@@ -32,7 +32,7 @@ def main():
         "13": ("Record Depth IR RGB Event", record_depth_ir_rgb_event.run),
         "14": ("Playback Recorded Files", playback_recorded_files.run),
         "15": ("Calibrate Frame Level Offset", calibrate_frame_level_offset.run),
-        "16": ("Playback Spatial Aligned Files", playback_spatial_aligned_file.run),
+        "16": ("Display Spatial Algined View", display_spatial_aligned_view.run),
     }
 
     while True:
