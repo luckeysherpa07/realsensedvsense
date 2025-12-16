@@ -13,17 +13,16 @@ def run():
 
     files = os.listdir(dataset_path)
 
-    # Extract unique prefixes
+    # Extract unique prefixes based on _event.raw convention
     prefixes = set()
     for f in files:
-        name = os.path.splitext(f)[0]
-        if "_" in name:
-            prefix = "_".join(name.split("_")[:-1])
+        if f.endswith("_event.raw"):
+            prefix = f.replace("_event.raw", "")
             prefixes.add(prefix)
     prefixes = sorted(list(prefixes))
 
     if not prefixes:
-        print("No recordings found in dataset.")
+        print("No recordings found in dataset (looking for *_event.raw).")
         return
 
     print("\nAvailable recordings:")
@@ -37,7 +36,6 @@ def run():
 
     selected_prefix = prefixes[int(choice) - 1]
     print(f"\nPlaying recording: {selected_prefix}")
-    print("Windows: [Event Stream] [IR+Event] [Depth+Event]")
 
     # Paths
     event_file = os.path.join(dataset_path, f"{selected_prefix}_event.raw")
@@ -49,11 +47,14 @@ def run():
     # -------------------------------
     delta_us = 0
     if os.path.exists(delta_file):
-        with open(delta_file, "r") as f:
-            val = float(f.read().strip())
-            delta_us = int(val * 1e6)
-        print(f"Calibration offset: {delta_us / 1e6} s")
-    
+        try:
+            with open(delta_file, "r") as f:
+                val = float(f.read().strip())
+                delta_us = int(val * 1e6)
+            print(f"Calibration offset loaded: {delta_us / 1e6} s")
+        except ValueError:
+            print("Warning: Could not parse delta file.")
+
     # -------------------------------
     # 2. Event iterator setup
     # -------------------------------
@@ -61,12 +62,16 @@ def run():
     event_frame_gen = None
     event_frame = None
     
+    # Buffers for event logic
     leftover_events = None 
+    ev_start_ts_us = None
     
     if os.path.exists(event_file):
-        mv_iterator = EventsIterator(input_path=event_file, delta_t=10000)
+        # We use a smaller delta_t for the iterator to allow fine-grained seeking
+        mv_iterator = EventsIterator(input_path=event_file, delta_t=1000)
         height, width = mv_iterator.get_size()
         
+        # Generate frames at 60 FPS or based on input flow
         event_frame_gen = PeriodicFrameGenerationAlgorithm(
             sensor_width=width,
             sensor_height=height,
@@ -74,6 +79,7 @@ def run():
             palette=ColorPalette.Dark
         )
         
+        # Initialize black frame
         event_frame = np.zeros((height, width, 3), dtype=np.uint8)
 
         def on_cd_frame_cb(ts, cd_frame):
@@ -83,8 +89,8 @@ def run():
         event_frame_gen.set_output_callback(on_cd_frame_cb)
         ev_iter = iter(mv_iterator)
     else:
-        print(f"Warning: Event file not found at {event_file}")
-        ev_iter = None
+        print(f"Error: Event file not found at {event_file}")
+        return
 
     # -------------------------------
     # 3. RealSense bag setup
@@ -97,138 +103,164 @@ def run():
         
         profile = pipeline.start(config)
         playback = profile.get_device().as_playback()
-        playback.set_real_time(False)
+        
+        # CRITICAL: Set real_time=True to view at normal speed
+        # Set to False if you want to process as fast as possible (fast forward)
+        playback.set_real_time(True) 
         
         colorizer = rs.colorizer()
     else:
         print("Error: Bag file not found.")
         return
 
-    print("Press ESC to exit.")
+    print("Controls: Press 'ESC' to exit.")
 
     # -------------------------------
     # 4. Playback Loop
     # -------------------------------
     rs_start_ts_ms = None
-    ev_start_ts_us = None
 
     try:
         while True:
             # A. Get RealSense Data
-            frames = pipeline.wait_for_frames()
-            
+            try:
+                frames = pipeline.wait_for_frames(timeout_ms=5000)
+            except RuntimeError:
+                print("RealSense playback finished.")
+                break
+
             depth_frame = frames.get_depth_frame()
-            # Get IR Frame
+            # Try to get IR frame from index 1 (usually Left IR), fallback to 0
             ir_frame = frames.get_infrared_frame(1)
             if not ir_frame:
                 ir_frame = frames.get_infrared_frame(0)
 
-            if not depth_frame or not ir_frame:
+            # Skip if frames are incomplete
+            if not depth_frame and not ir_frame:
                 continue
 
             # Handle RS Timing
-            current_rs_ts_ms = depth_frame.get_timestamp()
+            # get_timestamp() returns time in milliseconds
+            current_rs_ts_ms = frames.get_timestamp() 
+            
             if rs_start_ts_ms is None:
                 rs_start_ts_ms = current_rs_ts_ms
 
+            # Time elapsed since start of RS video (in microseconds)
             elapsed_time_us = int((current_rs_ts_ms - rs_start_ts_ms) * 1000)
 
-            # Process Images
-            # 1. Depth (Colorized)
-            depth_color = np.asanyarray(colorizer.colorize(depth_frame).get_data())
-            
-            # 2. IR (Normalized & BGR)
-            ir_image_raw = np.asanyarray(ir_frame.get_data())
-            if ir_image_raw.dtype == np.uint16:
-                ir_image_8bit = cv2.normalize(ir_image_raw, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-            else:
-                ir_image_8bit = ir_image_raw.astype(np.uint8)
-            ir_bgr = cv2.cvtColor(ir_image_8bit, cv2.COLOR_GRAY2BGR)
+            # --- Prepare Images ---
+            depth_color = None
+            ir_bgr = None
+
+            if depth_frame:
+                depth_color = np.asanyarray(colorizer.colorize(depth_frame).get_data())
+
+            if ir_frame:
+                ir_image_raw = np.asanyarray(ir_frame.get_data())
+                if ir_image_raw.dtype == np.uint16:
+                    ir_image_8bit = cv2.normalize(ir_image_raw, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+                else:
+                    ir_image_8bit = ir_image_raw.astype(np.uint8)
+                ir_bgr = cv2.cvtColor(ir_image_8bit, cv2.COLOR_GRAY2BGR)
 
             # B. Process Events up to this timestamp
             if ev_iter:
+                # 1. Initialize Event Start Timestamp if needed
                 if ev_start_ts_us is None:
-                    if leftover_events is not None and len(leftover_events) > 0:
-                        ev_start_ts_us = leftover_events['t'][0]
-                    else:
-                        try:
-                            init_evs = next(ev_iter)
-                            ev_start_ts_us = init_evs['t'][0]
-                            leftover_events = init_evs
-                        except StopIteration:
-                            pass 
+                    try:
+                        # Grab first batch to determine start time
+                        if leftover_events is None:
+                            leftover_events = next(ev_iter)
+                        if len(leftover_events) > 0:
+                            ev_start_ts_us = leftover_events['t'][0]
+                        else:
+                            # If empty, keep trying next batches
+                            while len(leftover_events) == 0:
+                                leftover_events = next(ev_iter)
+                            ev_start_ts_us = leftover_events['t'][0]
+                    except StopIteration:
+                        print("Event file is empty.")
+                        break
 
-                if ev_start_ts_us is not None:
-                    target_ev_raw = ev_start_ts_us + elapsed_time_us - delta_us
+                # 2. Calculate Target Timestamp
+                # target = Start_Event_Time + Duration_Elapsed_In_RS - Offset
+                target_ev_raw = ev_start_ts_us + elapsed_time_us - delta_us
 
-                    accumulated = []
+                accumulated = []
+                
+                # Add leftovers from previous loop
+                current_max_t = 0
+                if leftover_events is not None and len(leftover_events) > 0:
+                    accumulated.append(leftover_events)
+                    current_max_t = leftover_events['t'][-1]
+                    leftover_events = None # Consumed
+
+                # Fetch new events until we pass the target timestamp
+                while current_max_t < target_ev_raw:
+                    try:
+                        new_batch = next(ev_iter)
+                        if len(new_batch) == 0: 
+                            continue
+                        accumulated.append(new_batch)
+                        current_max_t = new_batch['t'][-1]
+                    except StopIteration:
+                        # Event file finished before RS file
+                        break
+                
+                # Process accumulated events
+                if accumulated:
+                    all_evs = np.concatenate(accumulated)
                     
-                    if leftover_events is not None and len(leftover_events) > 0:
-                        accumulated.append(leftover_events)
-                        leftover_events = None
-
-                    chunk_max_t = 0
-                    if len(accumulated) > 0:
-                        chunk_max_t = accumulated[-1]['t'][-1]
-
-                    while chunk_max_t < target_ev_raw:
-                        try:
-                            new_batch = next(ev_iter)
-                            if len(new_batch) == 0: 
-                                continue
-                            accumulated.append(new_batch)
-                            chunk_max_t = new_batch['t'][-1]
-                        except StopIteration:
-                            break
+                    # Find split point: events <= target_ev_raw
+                    split_idx = np.searchsorted(all_evs['t'], target_ev_raw, side='right')
                     
-                    if accumulated:
-                        all_evs = np.concatenate(accumulated)
-                        split_idx = np.searchsorted(all_evs['t'], target_ev_raw, side='right')
-                        
-                        events_to_process = all_evs[:split_idx]
-                        leftover_events = all_evs[split_idx:]
-                        
-                        if len(events_to_process) > 0:
-                            event_frame_gen.process_events(events_to_process)
+                    events_to_process = all_evs[:split_idx]
+                    leftover_events = all_evs[split_idx:] # Save for next frame
+                    
+                    if len(events_to_process) > 0:
+                        # Update the generator state
+                        event_frame_gen.process_events(events_to_process)
 
             # C. Visualization
             if event_frame is not None:
                 # ---------------- Window 1: Event Stream ----------------
                 cv2.imshow("Event Stream", event_frame)
 
+                # Helper function to overlay
+                def overlay_images(bg_img, overlay_img, alpha=0.6):
+                    if bg_img is None or overlay_img is None:
+                        return None
+                    h, w = bg_img.shape[:2]
+                    # Resize overlay to match background
+                    if overlay_img.shape[:2] != (h, w):
+                        overlay_resized = cv2.resize(overlay_img, (w, h))
+                    else:
+                        overlay_resized = overlay_img
+                    
+                    # Blend
+                    beta = 1.0 - alpha
+                    return cv2.addWeighted(overlay_resized, alpha, bg_img, beta, 0)
+
                 # ---------------- Window 2: IR + Event Overlay ----------------
                 if ir_bgr is not None:
-                    ir_overlay = ir_bgr.copy()
-                    # Resize event frame to match IR
-                    if event_frame.shape[:2] != ir_overlay.shape[:2]:
-                        ev_vis_ir = cv2.resize(event_frame, (ir_overlay.shape[1], ir_overlay.shape[0]))
-                    else:
-                        ev_vis_ir = event_frame
-                    
-                    cv2.addWeighted(ev_vis_ir, 0.7, ir_overlay, 0.5, 0, ir_overlay)
-                    cv2.imshow("IR + Event Overlay", ir_overlay)
+                    vis_ir = overlay_images(ir_bgr, event_frame, alpha=0.5)
+                    cv2.imshow("IR + Event Overlay", vis_ir)
 
                 # ---------------- Window 3: Depth + Event Overlay ----------------
                 if depth_color is not None:
-                    depth_overlay = depth_color.copy()
-                    # Resize event frame to match Depth
-                    if event_frame.shape[:2] != depth_overlay.shape[:2]:
-                        ev_vis_depth = cv2.resize(event_frame, (depth_overlay.shape[1], depth_overlay.shape[0]))
-                    else:
-                        ev_vis_depth = event_frame
-
-                    # Blend (Events tend to be bright, Depth map is colorful, 0.7/0.5 mix usually works)
-                    cv2.addWeighted(ev_vis_depth, 0.7, depth_overlay, 0.5, 0, depth_overlay)
-                    cv2.imshow("Depth + Event Overlay", depth_overlay)
+                    vis_depth = overlay_images(depth_color, event_frame, alpha=0.5)
+                    cv2.imshow("Depth + Event Overlay", vis_depth)
 
             key = cv2.waitKey(1)
-            if key == 27:
+            if key == 27: # ESC
                 break
 
     finally:
         if pipeline:
             pipeline.stop()
         cv2.destroyAllWindows()
+        print("Finished.")
 
 if __name__ == "__main__":
     run()
