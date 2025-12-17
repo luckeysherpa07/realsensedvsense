@@ -132,13 +132,9 @@ def project_dvs_to_ir_view(dvs_img_tensor, depth_tensor, calib, height, width, d
 
 def run():
     # ---------------- PATH SETUP ----------------
-    # Script location: .../camera_feature/script.py
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Parent directory: .../
     parent_dir = os.path.dirname(script_dir)
     
-    # Dataset and Calibration paths
     dataset_path = os.path.join(parent_dir, "dataset")
     calib_file = os.path.join(parent_dir, "stereo_calibration_checkerboard.yaml")
 
@@ -248,17 +244,15 @@ def run():
 
             rs_h, rs_w = depth_img.shape
 
-            # 2. Event Slicing (FIXED LOGIC)
+            # 2. Event Slicing
             events_to_process = None
             if ev_iter:
                 # --- Step A: Ensure we have a valid Start Timestamp ---
                 while ev_start_ts_us is None:
-                    # Check if we have pending events from previous read
                     if leftover_events is not None and len(leftover_events) > 0:
                         ev_start_ts_us = leftover_events['t'][0]
                         break
                     
-                    # If not, try to fetch the first batch
                     try:
                         leftover_events = next(ev_iter)
                     except StopIteration:
@@ -266,20 +260,20 @@ def run():
                         ev_iter = None
                         break
                 
-                # If we still don't have a timestamp, we can't process events
                 if ev_iter is None or ev_start_ts_us is None:
-                    # Skip event processing this frame, just show video
                     pass 
                 else:
                     # --- Step B: Calculate Target and Fetch ---
                     target_ev = ev_start_ts_us + elapsed_us - delta_us
                     
                     accumulated = []
-                    if leftover_events is not None:
+                    
+                    # FIX: Only append if length > 0
+                    if leftover_events is not None and len(leftover_events) > 0:
                         accumulated.append(leftover_events)
                         leftover_events = None
                     
-                    # Find max time in current buffer
+                    # FIX: Safe access to timestamp
                     cur_t = accumulated[-1]['t'][-1] if accumulated else 0
                     
                     # Accumulate until target
@@ -294,9 +288,12 @@ def run():
                     
                     if accumulated:
                         all_evs = np.concatenate(accumulated)
-                        split = np.searchsorted(all_evs['t'], target_ev, side='right')
-                        events_to_process = all_evs[:split]
-                        leftover_events = all_evs[split:]
+                        if len(all_evs) > 0:
+                            split = np.searchsorted(all_evs['t'], target_ev, side='right')
+                            events_to_process = all_evs[:split]
+                            leftover_events = all_evs[split:]
+                        else:
+                            leftover_events = None
 
             # 3. GPU Accumulation
             dvs_hist_gpu.zero_()
@@ -327,13 +324,11 @@ def run():
             # 5. Display
             mask = warped_u8 > 10
             
-            # IR Overlay (Magenta)
             ir_disp = ir_bgr.copy()
             if np.any(mask):
                 ir_disp[mask, 0] = cv2.add(ir_disp[mask, 0], warped_u8[mask]).flatten()
                 ir_disp[mask, 2] = cv2.add(ir_disp[mask, 2], warped_u8[mask]).flatten()
             
-            # Depth Overlay (White)
             depth_disp = depth_color.copy()
             if np.any(mask):
                 depth_disp[mask] = [255, 255, 255]
