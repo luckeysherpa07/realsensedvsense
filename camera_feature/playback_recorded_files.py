@@ -187,9 +187,14 @@ def run():
 
     # ---------------- SETUP EVENT READER ----------------
     if not os.path.exists(event_file): return
-    mv_iterator = EventsIterator(input_path=event_file, delta_t=1000)
-    ev_height, ev_width = mv_iterator.get_size()
-    ev_iter = iter(mv_iterator)
+    
+    def reset_event_iterator():
+        # print("Resetting Event Iterator...")
+        it = EventsIterator(input_path=event_file, delta_t=1000)
+        h, w = it.get_size()
+        return it, iter(it), h, w
+
+    mv_iterator, ev_iter, ev_height, ev_width = reset_event_iterator()
     
     dvs_hist_gpu = torch.zeros((2, ev_height, ev_width), dtype=torch.float32, device=device)
     ones_gpu = None 
@@ -200,7 +205,7 @@ def run():
     if not os.path.exists(bag_file): return
     pipeline = rs.pipeline()
     config = rs.config()
-    config.enable_device_from_file(bag_file, repeat_playback=False)
+    config.enable_device_from_file(bag_file, repeat_playback=True)
     
     profile = pipeline.start(config)
     playback = profile.get_device().as_playback()
@@ -210,8 +215,11 @@ def run():
     depth_sensor = profile.get_device().first_depth_sensor()
     depth_scale = depth_sensor.get_depth_scale()
 
-    print("\nStarting playback...")
+    print("\nStarting playback (Press ESC to quit)...")
+    
+    # State tracking variables
     rs_start_ts_ms = None
+    prev_ts_ms = -1
 
     try:
         while True:
@@ -219,16 +227,35 @@ def run():
             try:
                 frames = pipeline.wait_for_frames(timeout_ms=2000)
             except RuntimeError:
-                print("End of bag file.")
+                print("Stream ended unexpectedly.")
                 break 
 
             depth_frame = frames.get_depth_frame()
             ir_frame = frames.get_infrared_frame(1) or frames.get_infrared_frame(0)
             if not depth_frame or not ir_frame: continue
 
-            # Timing
+            # Timing & Loop Detection
             curr_ms = frames.get_timestamp()
-            if rs_start_ts_ms is None: rs_start_ts_ms = curr_ms
+            
+            # Detect loop: if current timestamp is significantly smaller than previous
+            if prev_ts_ms > 0 and curr_ms < prev_ts_ms:
+                # print("Loop detected. Rewinding events...")
+                
+                # --- FIX: Do NOT reset rs_start_ts_ms. ---
+                # We keep the original anchor from the first run.
+                # This ensures the 'elapsed' calculation remains consistent with the first loop.
+                
+                # Reset Event Reader to beginning
+                mv_iterator, ev_iter, _, _ = reset_event_iterator()
+                leftover_events = None
+                ev_start_ts_us = None
+            
+            prev_ts_ms = curr_ms
+
+            # Initialize Start Time only ONCE
+            if rs_start_ts_ms is None: 
+                rs_start_ts_ms = curr_ms
+            
             elapsed_us = int((curr_ms - rs_start_ts_ms) * 1000)
 
             # Images
@@ -246,6 +273,8 @@ def run():
 
             # 2. Event Slicing
             events_to_process = None
+            
+            # Only process if we have a valid iterator
             if ev_iter:
                 # --- Step A: Ensure we have a valid Start Timestamp ---
                 while ev_start_ts_us is None:
@@ -256,44 +285,46 @@ def run():
                     try:
                         leftover_events = next(ev_iter)
                     except StopIteration:
-                        print("Event file is empty or finished.")
                         ev_iter = None
                         break
                 
-                if ev_iter is None or ev_start_ts_us is None:
-                    pass 
-                else:
+                if ev_iter is not None and ev_start_ts_us is not None:
                     # --- Step B: Calculate Target and Fetch ---
                     target_ev = ev_start_ts_us + elapsed_us - delta_us
                     
-                    accumulated = []
-                    
-                    # FIX: Only append if length > 0
-                    if leftover_events is not None and len(leftover_events) > 0:
-                        accumulated.append(leftover_events)
-                        leftover_events = None
-                    
-                    # FIX: Safe access to timestamp
-                    cur_t = accumulated[-1]['t'][-1] if accumulated else 0
-                    
-                    # Accumulate until target
-                    while cur_t < target_ev:
-                        try:
-                            nb = next(ev_iter)
-                            if len(nb) == 0: continue
-                            accumulated.append(nb)
-                            cur_t = nb['t'][-1]
-                        except StopIteration:
-                            break
-                    
-                    if accumulated:
-                        all_evs = np.concatenate(accumulated)
-                        if len(all_evs) > 0:
-                            split = np.searchsorted(all_evs['t'], target_ev, side='right')
-                            events_to_process = all_evs[:split]
-                            leftover_events = all_evs[split:]
-                        else:
+                    # If target is before start of file (due to offset), skip processing
+                    if target_ev < ev_start_ts_us:
+                        events_to_process = None
+                    else:
+                        accumulated = []
+                        
+                        if leftover_events is not None and len(leftover_events) > 0:
+                            accumulated.append(leftover_events)
                             leftover_events = None
+                        
+                        cur_t = accumulated[-1]['t'][-1] if accumulated else 0
+                        # If we just reset, cur_t might be 0, we need to base it on ev_start_ts_us
+                        if cur_t == 0: cur_t = ev_start_ts_us
+                        
+                        # Accumulate until target
+                        while cur_t < target_ev:
+                            try:
+                                nb = next(ev_iter)
+                                if len(nb) == 0: continue
+                                accumulated.append(nb)
+                                cur_t = nb['t'][-1]
+                            except StopIteration:
+                                ev_iter = None 
+                                break
+                        
+                        if accumulated:
+                            all_evs = np.concatenate(accumulated)
+                            if len(all_evs) > 0:
+                                split = np.searchsorted(all_evs['t'], target_ev, side='right')
+                                events_to_process = all_evs[:split]
+                                leftover_events = all_evs[split:]
+                            else:
+                                leftover_events = None
 
             # 3. GPU Accumulation
             dvs_hist_gpu.zero_()
@@ -302,10 +333,17 @@ def run():
                 ys = torch.from_numpy(events_to_process['y'].astype(np.int64)).to(device)
                 pols = torch.from_numpy(events_to_process['p'].astype(np.int64)).to(device)
                 
-                if ones_gpu is None or ones_gpu.shape[0] != xs.shape[0]:
-                    ones_gpu = torch.ones(xs.shape[0], dtype=torch.float32, device=device)
-                
-                dvs_hist_gpu.index_put_((pols, ys, xs), ones_gpu, accumulate=True)
+                # Check bounds to prevent crashes on resize/warp mismatches
+                mask_ev = (xs < ev_width) & (ys < ev_height) & (xs >= 0) & (ys >= 0)
+                if mask_ev.any():
+                    xs = xs[mask_ev]
+                    ys = ys[mask_ev]
+                    pols = pols[mask_ev]
+
+                    if ones_gpu is None or ones_gpu.shape[0] != xs.shape[0]:
+                        ones_gpu = torch.ones(xs.shape[0], dtype=torch.float32, device=device)
+                    
+                    dvs_hist_gpu.index_put_((pols, ys, xs), ones_gpu, accumulate=True)
 
             dvs_raw = (dvs_hist_gpu[1] + dvs_hist_gpu[0])
             if dvs_raw.max() > 0:
