@@ -247,7 +247,7 @@ def run_calibration(prefix, dataset_path):
 # =====================================================================
 def run():
     dataset_path = "dataset"
-    prefix = "0021"
+    prefix = "0022"
 
     print("\n=== Running Frame Level Auto Calibration ===")
     print(f"Using prefix: {prefix}")
