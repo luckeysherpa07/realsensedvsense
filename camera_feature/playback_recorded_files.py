@@ -28,7 +28,7 @@ class DvsProjector:
         d_dvs = calib['D_dvs']
         self.D_dvs = torch.from_numpy(d_dvs).to(device).float().flatten()
         
-        # Pre-compute Grid for IR Camera (Output View)
+        # Pre-compute Grid for IR/Depth Camera (Output View)
         rows = torch.arange(height, device=device, dtype=torch.float32)
         cols = torch.arange(width, device=device, dtype=torch.float32)
         self.grid_y, self.grid_x = torch.meshgrid(rows, cols, indexing='ij')
@@ -61,7 +61,7 @@ class DvsProjector:
         fx_dvs, fy_dvs = self.K_dvs[0, 0], self.K_dvs[1, 1]
         cx_dvs, cy_dvs = self.K_dvs[0, 2], self.K_dvs[1, 2]
 
-        # 1. Back-project IR pixels to 3D
+        # 1. Back-project IR/Depth pixels to 3D
         Z = depth_tensor
         valid_mask = (Z > 0.01) # Filter invalid depth
 
@@ -87,8 +87,6 @@ class DvsProjector:
         v_dvs = y_dist * fy_dvs + cy_dvs
         
         # --- APPLY MANUAL OFFSET ---
-        # If the projection is shifted Top-Left, we add to these values 
-        # to push the sampling point Down-Right.
         u_dvs += off_x
         v_dvs += off_y
         # ---------------------------
@@ -220,8 +218,7 @@ def run():
                 break 
 
             depth_frame = frames.get_depth_frame()
-            ir_frame = frames.get_infrared_frame(1) or frames.get_infrared_frame(0)
-            if not depth_frame or not ir_frame: continue
+            if not depth_frame: continue
 
             # Timing & Loop Detection
             curr_ms = frames.get_timestamp()
@@ -237,7 +234,6 @@ def run():
 
             # Images
             depth_img = np.asanyarray(depth_frame.get_data())
-            ir_raw = np.asanyarray(ir_frame.get_data())
             
             # Init Projector
             if projector is None and calib_data:
@@ -301,27 +297,31 @@ def run():
             if val_max > 0:
                 dvs_raw_clr = torch.clamp(dvs_raw_clr / 3.0, 0, 1)
 
-            ir_disp = cv2.cvtColor(cv2.normalize(ir_raw, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U), cv2.COLOR_GRAY2BGR)
+            # --- VISUALIZATION UPDATE ---
+            # Used convertScaleAbs with alpha=0.08 to match the requested look
+            # This provides better contrast in the near-range
+            depth_colormap = cv2.applyColorMap(
+                cv2.convertScaleAbs(depth_img, alpha=0.08), 
+                cv2.COLORMAP_JET
+            )
 
             if projector:
                 depth_tensor = torch.from_numpy(depth_img).to(DEVICE).float() * (depth_scale * DEPTH_SCALE_FACTOR)
                 
-                # --- APPLY MANUAL OFFSETS HERE ---
+                # Project events
                 warped_dvs = projector.project(dvs_raw_clr, depth_tensor, off_x=offset_x, off_y=offset_y)
-                
                 warped_u8 = (warped_dvs.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
                 
                 # Overlay
                 mask = np.any(warped_u8 > 10, axis=2)
                 if np.any(mask):
-                    # Simple weighted blend
-                    ir_disp[mask] = cv2.addWeighted(ir_disp[mask], 0.7, warped_u8[mask], 1.0, 0)
+                    depth_colormap[mask] = cv2.addWeighted(depth_colormap[mask], 0.7, warped_u8[mask], 1.0, 0)
 
             # Draw Offset Text
-            cv2.putText(ir_disp, f"Offset X: {offset_x:.1f} | Y: {offset_y:.1f}", (10, 30), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(depth_colormap, f"Offset X: {offset_x:.1f} | Y: {offset_y:.1f}", (10, 30), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
-            cv2.imshow("IR + DVS Projection", ir_disp)
+            cv2.imshow("Depth + DVS Projection", depth_colormap)
 
             # ---------------- KEYBOARD CONTROL ----------------
             key = cv2.waitKey(1)
