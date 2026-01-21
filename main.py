@@ -15,6 +15,7 @@ from camera_feature import playback_recorded_files
 from camera_feature import calibrate_frame_level_offset
 from camera_feature import display_spatial_aligned_view
 from camera_feature import display_sun_example
+from camera_feature import playback_depth_event
 
 def main():
     options = {
@@ -35,6 +36,7 @@ def main():
         "15": ("Calibrate Frame Level Offset", calibrate_frame_level_offset.run),
         "16": ("Display Spatial Algined View", display_spatial_aligned_view.run),
         "17": ("Display Sun Example", display_sun_example.run),
+        "18": ("Playback Depth and Event only", playback_depth_event.run),
     }
 
     while True:
