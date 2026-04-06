@@ -10,7 +10,7 @@ import pyrealsense2 as rs
 from importlib.util import find_spec
 
 
-INPUT_DIR = Path("dataset/brew_tea")
+INPUT_DIR = Path("dataset/make_coffee")
 OUTPUT_ROOT = INPUT_DIR.parent / f"{INPUT_DIR.name}_split"
 OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
