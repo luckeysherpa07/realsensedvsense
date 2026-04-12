@@ -1,0 +1,41 @@
+{
+  "split_dir": "brew_tea_split",
+  "prefix": "cloudy_no_light",
+  "status": "completed",
+  "video_mode": "reencode",
+  "dry_run": false,
+  "reference_video": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\brew_tea_split\\cloudy_no_light_rgb.mp4",
+  "resolved": {
+    "video_start": "00:00:00.000",
+    "video_end": "00:00:59.900",
+    "audio_start": "00:00:01.500",
+    "audio_end": "00:01:00.500",
+    "video_duration_seconds": 59.9,
+    "audio_duration_seconds": 59.0
+  },
+  "original_config": {
+    "video_start": null,
+    "video_end": null,
+    "audio_start": "00:00:01.500",
+    "audio_end": "00:01:00.500",
+    "audio_offset_seconds": null
+  },
+  "inputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\brew_tea_split\\cloudy_no_light_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\brew_tea_split\\cloudy_no_light_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\brew_tea_split\\cloudy_no_light_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\brew_tea_split\\cloudy_no_light_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\brew_tea_split\\cloudy_no_light.m4a"
+  },
+  "outputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\brew_tea_split\\cloudy_no_light_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\brew_tea_split\\cloudy_no_light_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\brew_tea_split\\cloudy_no_light_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\brew_tea_split\\cloudy_no_light_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\brew_tea_split\\cloudy_no_light.m4a"
+  }
+}

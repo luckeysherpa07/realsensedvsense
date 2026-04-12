@@ -1,0 +1,41 @@
+{
+  "split_dir": "wash_hands_split",
+  "prefix": "wash_hands_day",
+  "status": "planned",
+  "video_mode": "reencode",
+  "dry_run": false,
+  "reference_video": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_hands_split\\wash_hands_day_rgb.mp4",
+  "resolved": {
+    "video_start": "00:00:38.000",
+    "video_end": "00:02:42.700",
+    "audio_start": "00:00:05.000",
+    "audio_end": "00:02:09.000",
+    "video_duration_seconds": 124.7,
+    "audio_duration_seconds": 124.0
+  },
+  "original_config": {
+    "video_start": "00:00:38.000",
+    "video_end": null,
+    "audio_start": "00:00:05.000",
+    "audio_end": "00:02:09.000",
+    "audio_offset_seconds": null
+  },
+  "inputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_hands_split\\wash_hands_day_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_hands_split\\wash_hands_day_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_hands_split\\wash_hands_day_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_hands_split\\wash_hands_day_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_hands_split\\wash_hands_day.m4a"
+  },
+  "outputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_hands_split\\wash_hands_day_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_hands_split\\wash_hands_day_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_hands_split\\wash_hands_day_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_hands_split\\wash_hands_day_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_hands_split\\wash_hands_day.m4a"
+  }
+}

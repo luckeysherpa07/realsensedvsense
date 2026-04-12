@@ -1,0 +1,41 @@
+{
+  "split_dir": "cut_carrot_split",
+  "prefix": "cut_carrot_day",
+  "status": "completed",
+  "video_mode": "reencode",
+  "dry_run": false,
+  "reference_video": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\cut_carrot_split\\cut_carrot_day_rgb.mp4",
+  "resolved": {
+    "video_start": "00:00:00.000",
+    "video_end": "00:03:05.000",
+    "audio_start": "00:00:00.000",
+    "audio_end": "00:03:05.000",
+    "video_duration_seconds": 185.0,
+    "audio_duration_seconds": 185.0
+  },
+  "original_config": {
+    "video_start": null,
+    "video_end": "00:03:05.000",
+    "audio_start": null,
+    "audio_end": "00:03:05.000",
+    "audio_offset_seconds": null
+  },
+  "inputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\cut_carrot_split\\cut_carrot_day_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\cut_carrot_split\\cut_carrot_day_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\cut_carrot_split\\cut_carrot_day_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\cut_carrot_split\\cut_carrot_day_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\cut_carrot_split\\cut_carrot_day.m4a"
+  },
+  "outputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\cut_carrot_split\\cut_carrot_day_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\cut_carrot_split\\cut_carrot_day_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\cut_carrot_split\\cut_carrot_day_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\cut_carrot_split\\cut_carrot_day_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\cut_carrot_split\\cut_carrot_day.m4a"
+  }
+}

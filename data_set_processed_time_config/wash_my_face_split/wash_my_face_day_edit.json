@@ -1,0 +1,41 @@
+{
+  "split_dir": "wash_my_face_split",
+  "prefix": "wash_my_face_day",
+  "status": "completed",
+  "video_mode": "reencode",
+  "dry_run": false,
+  "reference_video": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_my_face_split\\wash_my_face_day_rgb.mp4",
+  "resolved": {
+    "video_start": "00:00:32.000",
+    "video_end": "00:02:20.000",
+    "audio_start": "00:00:00.000",
+    "audio_end": "00:01:48.000",
+    "video_duration_seconds": 108.0,
+    "audio_duration_seconds": 108.0
+  },
+  "original_config": {
+    "video_start": "00:00:32.000",
+    "video_end": "00:02:20.000",
+    "audio_start": null,
+    "audio_end": "00:01:48.000",
+    "audio_offset_seconds": null
+  },
+  "inputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_my_face_split\\wash_my_face_day_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_my_face_split\\wash_my_face_day_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_my_face_split\\wash_my_face_day_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_my_face_split\\wash_my_face_day_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_my_face_split\\wash_my_face_day.m4a"
+  },
+  "outputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_my_face_split\\wash_my_face_day_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_my_face_split\\wash_my_face_day_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_my_face_split\\wash_my_face_day_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_my_face_split\\wash_my_face_day_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_my_face_split\\wash_my_face_day.m4a"
+  }
+}

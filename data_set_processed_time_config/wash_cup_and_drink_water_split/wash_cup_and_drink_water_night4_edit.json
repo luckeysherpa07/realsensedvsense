@@ -1,0 +1,41 @@
+{
+  "split_dir": "wash_cup_and_drink_water_split",
+  "prefix": "wash_cup_and_drink_water_night4",
+  "status": "completed",
+  "video_mode": "reencode",
+  "dry_run": false,
+  "reference_video": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_cup_and_drink_water_split\\wash_cup_and_drink_water_night4_rgb.mp4",
+  "resolved": {
+    "video_start": "00:00:27.000",
+    "video_end": "00:02:17.000",
+    "audio_start": "00:00:00.000",
+    "audio_end": "00:01:50.502",
+    "video_duration_seconds": 110.0,
+    "audio_duration_seconds": 110.502
+  },
+  "original_config": {
+    "video_start": "00:00:27.000",
+    "video_end": "00:02:17.000",
+    "audio_start": null,
+    "audio_end": null,
+    "audio_offset_seconds": null
+  },
+  "inputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_cup_and_drink_water_split\\wash_cup_and_drink_water_night4_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_cup_and_drink_water_split\\wash_cup_and_drink_water_night4_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_cup_and_drink_water_split\\wash_cup_and_drink_water_night4_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_cup_and_drink_water_split\\wash_cup_and_drink_water_night4_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\wash_cup_and_drink_water_split\\wash_cup_and_drink_water_night4.m4a"
+  },
+  "outputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_cup_and_drink_water_split\\wash_cup_and_drink_water_night4_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_cup_and_drink_water_split\\wash_cup_and_drink_water_night4_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_cup_and_drink_water_split\\wash_cup_and_drink_water_night4_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_cup_and_drink_water_split\\wash_cup_and_drink_water_night4_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\wash_cup_and_drink_water_split\\wash_cup_and_drink_water_night4.m4a"
+  }
+}

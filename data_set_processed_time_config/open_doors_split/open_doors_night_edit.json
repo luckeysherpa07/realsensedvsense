@@ -1,0 +1,41 @@
+{
+  "split_dir": "open_doors_split",
+  "prefix": "open_doors_night",
+  "status": "completed",
+  "video_mode": "reencode",
+  "dry_run": false,
+  "reference_video": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\open_doors_split\\open_doors_night_rgb.mp4",
+  "resolved": {
+    "video_start": "00:00:32.000",
+    "video_end": "00:03:24.467",
+    "audio_start": "00:00:00.000",
+    "audio_end": "00:02:52.000",
+    "video_duration_seconds": 172.467,
+    "audio_duration_seconds": 172.0
+  },
+  "original_config": {
+    "video_start": "00:00:32.000",
+    "video_end": null,
+    "audio_start": null,
+    "audio_end": "00:02:52.000",
+    "audio_offset_seconds": null
+  },
+  "inputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\open_doors_split\\open_doors_night_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\open_doors_split\\open_doors_night_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\open_doors_split\\open_doors_night_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\open_doors_split\\open_doors_night_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\open_doors_split\\open_doors_night.m4a"
+  },
+  "outputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\open_doors_split\\open_doors_night_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\open_doors_split\\open_doors_night_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\open_doors_split\\open_doors_night_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\open_doors_split\\open_doors_night_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\open_doors_split\\open_doors_night.m4a"
+  }
+}

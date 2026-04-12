@@ -1,0 +1,41 @@
+{
+  "split_dir": "ride_a_bike_split",
+  "prefix": "ride_a_bike_day",
+  "status": "completed",
+  "video_mode": "reencode",
+  "dry_run": false,
+  "reference_video": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\ride_a_bike_split\\ride_a_bike_day_rgb.mp4",
+  "resolved": {
+    "video_start": "00:00:25.000",
+    "video_end": "00:02:03.467",
+    "audio_start": "00:00:00.000",
+    "audio_end": "00:01:38.000",
+    "video_duration_seconds": 98.467,
+    "audio_duration_seconds": 98.0
+  },
+  "original_config": {
+    "video_start": "00:00:25.000",
+    "video_end": null,
+    "audio_start": null,
+    "audio_end": "00:01:38.000",
+    "audio_offset_seconds": null
+  },
+  "inputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\ride_a_bike_split\\ride_a_bike_day_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\ride_a_bike_split\\ride_a_bike_day_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\ride_a_bike_split\\ride_a_bike_day_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\ride_a_bike_split\\ride_a_bike_day_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\ride_a_bike_split\\ride_a_bike_day.m4a"
+  },
+  "outputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\ride_a_bike_split\\ride_a_bike_day_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\ride_a_bike_split\\ride_a_bike_day_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\ride_a_bike_split\\ride_a_bike_day_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\ride_a_bike_split\\ride_a_bike_day_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\ride_a_bike_split\\ride_a_bike_day.m4a"
+  }
+}

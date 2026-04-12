@@ -1,0 +1,41 @@
+{
+  "split_dir": "park_scene_split",
+  "prefix": "park_scene_night",
+  "status": "completed",
+  "video_mode": "reencode",
+  "dry_run": false,
+  "reference_video": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\park_scene_split\\park_scene_night_rgb.mp4",
+  "resolved": {
+    "video_start": "00:00:00.000",
+    "video_end": "00:00:48.700",
+    "audio_start": "00:00:03.000",
+    "audio_end": "00:00:51.857",
+    "video_duration_seconds": 48.7,
+    "audio_duration_seconds": 48.857
+  },
+  "original_config": {
+    "video_start": null,
+    "video_end": null,
+    "audio_start": "00:00:03.000",
+    "audio_end": null,
+    "audio_offset_seconds": null
+  },
+  "inputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\park_scene_split\\park_scene_night_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\park_scene_split\\park_scene_night_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\park_scene_split\\park_scene_night_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\park_scene_split\\park_scene_night_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\park_scene_split\\park_scene_night.m4a"
+  },
+  "outputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\park_scene_split\\park_scene_night_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\park_scene_split\\park_scene_night_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\park_scene_split\\park_scene_night_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\park_scene_split\\park_scene_night_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\park_scene_split\\park_scene_night.m4a"
+  }
+}

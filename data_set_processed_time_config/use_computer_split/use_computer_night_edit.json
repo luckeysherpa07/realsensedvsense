@@ -1,0 +1,41 @@
+{
+  "split_dir": "use_computer_split",
+  "prefix": "use_computer_night",
+  "status": "completed",
+  "video_mode": "reencode",
+  "dry_run": false,
+  "reference_video": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\use_computer_split\\use_computer_night_rgb.mp4",
+  "resolved": {
+    "video_start": "00:00:00.000",
+    "video_end": "00:03:11.000",
+    "audio_start": "00:00:01.000",
+    "audio_end": "00:03:12.858",
+    "video_duration_seconds": 191.0,
+    "audio_duration_seconds": 191.858
+  },
+  "original_config": {
+    "video_start": null,
+    "video_end": "00:03:11.000",
+    "audio_start": "00:00:01.000",
+    "audio_end": null,
+    "audio_offset_seconds": null
+  },
+  "inputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\use_computer_split\\use_computer_night_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\use_computer_split\\use_computer_night_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\use_computer_split\\use_computer_night_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\use_computer_split\\use_computer_night_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\use_computer_split\\use_computer_night.m4a"
+  },
+  "outputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\use_computer_split\\use_computer_night_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\use_computer_split\\use_computer_night_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\use_computer_split\\use_computer_night_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\use_computer_split\\use_computer_night_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\use_computer_split\\use_computer_night.m4a"
+  }
+}

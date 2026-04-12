@@ -1,0 +1,41 @@
+{
+  "split_dir": "pour_water_split",
+  "prefix": "pour_water_day",
+  "status": "completed",
+  "video_mode": "reencode",
+  "dry_run": false,
+  "reference_video": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\pour_water_split\\pour_water_day_rgb.mp4",
+  "resolved": {
+    "video_start": "00:00:00.000",
+    "video_end": "00:01:21.000",
+    "audio_start": "00:00:00.000",
+    "audio_end": "00:01:21.352",
+    "video_duration_seconds": 81.0,
+    "audio_duration_seconds": 81.352
+  },
+  "original_config": {
+    "video_start": null,
+    "video_end": "00:01:21.000",
+    "audio_start": null,
+    "audio_end": null,
+    "audio_offset_seconds": null
+  },
+  "inputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\pour_water_split\\pour_water_day_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\pour_water_split\\pour_water_day_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\pour_water_split\\pour_water_day_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\pour_water_split\\pour_water_day_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\pour_water_split\\pour_water_day.m4a"
+  },
+  "outputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\pour_water_split\\pour_water_day_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\pour_water_split\\pour_water_day_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\pour_water_split\\pour_water_day_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\pour_water_split\\pour_water_day_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\pour_water_split\\pour_water_day.m4a"
+  }
+}

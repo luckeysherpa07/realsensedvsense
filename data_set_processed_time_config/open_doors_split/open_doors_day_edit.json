@@ -1,0 +1,41 @@
+{
+  "split_dir": "open_doors_split",
+  "prefix": "open_doors_day",
+  "status": "completed",
+  "video_mode": "reencode",
+  "dry_run": false,
+  "reference_video": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\open_doors_split\\open_doors_day_rgb.mp4",
+  "resolved": {
+    "video_start": "00:00:32.500",
+    "video_end": "00:02:57.633",
+    "audio_start": "00:00:00.000",
+    "audio_end": "00:02:24.500",
+    "video_duration_seconds": 145.133,
+    "audio_duration_seconds": 144.5
+  },
+  "original_config": {
+    "video_start": "00:00:32.500",
+    "video_end": null,
+    "audio_start": null,
+    "audio_end": "00:02:24.500",
+    "audio_offset_seconds": null
+  },
+  "inputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\open_doors_split\\open_doors_day_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\open_doors_split\\open_doors_day_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\open_doors_split\\open_doors_day_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\open_doors_split\\open_doors_day_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset\\open_doors_split\\open_doors_day.m4a"
+  },
+  "outputs": {
+    "videos": {
+      "rgb": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\open_doors_split\\open_doors_day_rgb.mp4",
+      "depth": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\open_doors_split\\open_doors_day_depth.mp4",
+      "ir": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\open_doors_split\\open_doors_day_ir.mp4",
+      "event": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\open_doors_split\\open_doors_day_event.mp4"
+    },
+    "audio": "C:\\Users\\yao\\Documents\\courses\\project\\realsensedvsense\\dataset_processed\\open_doors_split\\open_doors_day.m4a"
+  }
+}
