@@ -11,29 +11,30 @@ from typing import Optional
 
 
 VIDEO_SUFFIXES = ("rgb", "depth", "ir", "event")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Edit these values directly if you prefer not to use command line arguments.
 USE_INLINE_CONFIG = True
-DATASET_ROOT = Path("../dataset")
-OUTPUT_ROOT = Path("dataset_processed")
+DATASET_ROOT = PROJECT_ROOT / "dataset"
+OUTPUT_ROOT = PROJECT_ROOT / "dataset_processed"
 VIDEO_MODE = "reencode"  # "copy" is faster but only keyframe-accurate.
-DRY_RUN = True
+DRY_RUN = False
 INLINE_JOBS = [
     {
-        "split_dir": "wash_hands_split",
-        "prefix": "wash_hands_day",
-        "video_start": "00:00:38.000",
-        "video_end": "",
-        "audio_start": "00:00:05.000",
-        "audio_end": "00:02:09.000",
+        "split_dir": "pour_water_split",
+        "prefix": "pour_water_day",
+        "video_start": "",
+        "video_end": "00:01:21.000",
+        "audio_start": "",
+        "audio_end": "",
     },
     {
-        "split_dir": "wash_hands_split",
-        "prefix": "wash_hands_night2",
-        "video_start": "00:00:42.000",
+        "split_dir": "pour_water_split",
+        "prefix": "pour_water_night",
+        "video_start": "",
         "video_end": "",
-        "audio_start": "00:00:01.000",
-        "audio_end": "00:02:20.000",
+        "audio_start": "00:00:04.000",
+        "audio_end": "00:01:11.000",
     },
 ]
 
@@ -144,11 +145,11 @@ def load_inline_jobs() -> list[Job]:
             raise ValueError(
                 f"{job.split_dir}/{job.prefix}: video_end must be greater than video_start"
             )
-        if (job.audio_start is None) != (job.audio_end is None):
-            raise ValueError(
-                f"{job.split_dir}/{job.prefix}: audio_start and audio_end must be provided together"
-            )
-        if job.audio_start is not None and job.audio_end is not None and job.audio_end <= job.audio_start:
+        if (
+            job.audio_start is not None
+            and job.audio_end is not None
+            and job.audio_end <= job.audio_start
+        ):
             raise ValueError(
                 f"{job.split_dir}/{job.prefix}: audio_end must be greater than audio_start"
             )
@@ -215,6 +216,147 @@ def probe_duration(input_path: Path) -> float:
     if duration is None:
         raise ValueError(f"could not probe duration for {input_path}")
     return float(duration)
+
+
+def resolve_job_paths(dataset_root: Path, output_root: Path, job: Job) -> tuple[Path, Path]:
+    input_dir = dataset_root / job.split_dir
+    output_dir = output_root / job.split_dir
+    return input_dir, output_dir
+
+
+def resolve_reference_video(input_dir: Path, prefix: str) -> Path:
+    reference_video = input_dir / f"{prefix}_rgb.mp4"
+    if reference_video.exists():
+        return reference_video
+    for suffix in VIDEO_SUFFIXES:
+        candidate = input_dir / f"{prefix}_{suffix}.mp4"
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"missing reference video for {input_dir.name}/{prefix}")
+
+
+def resolve_job_timings(input_dir: Path, job: Job) -> tuple[Path, float, float, Path, Optional[float], Optional[float], Optional[Path]]:
+    reference_video = resolve_reference_video(input_dir, job.prefix)
+    video_start = job.video_start if job.video_start is not None else 0.0
+    video_end = job.video_end if job.video_end is not None else probe_duration(reference_video)
+    if video_end <= video_start:
+        raise ValueError(f"{job.split_dir}/{job.prefix}: resolved video_end must be greater than video_start")
+
+    audio_input = input_dir / f"{job.prefix}.m4a"
+    audio_output: Optional[Path] = None
+    audio_start: Optional[float] = None
+    audio_end: Optional[float] = None
+    if audio_input.exists():
+        audio_output = Path(f"{job.prefix}.m4a")
+        audio_start = job.audio_start if job.audio_start is not None else 0.0
+        audio_end = job.audio_end if job.audio_end is not None else probe_duration(audio_input)
+        if job.audio_start is None and job.audio_end is None and job.audio_offset is not None:
+            audio_start = video_start + job.audio_offset
+            if audio_start < 0:
+                audio_start = 0.0
+            audio_end = audio_start + (video_end - video_start)
+        if audio_end <= audio_start:
+            raise ValueError(f"{job.split_dir}/{job.prefix}: resolved audio_end must be greater than audio_start")
+
+    return reference_video, video_start, video_end, audio_input, audio_start, audio_end, audio_output
+
+
+def write_planned_record(dataset_root: Path, output_root: Path, job: Job, video_mode: str, dry_run: bool) -> None:
+    input_dir, output_dir = resolve_job_paths(dataset_root, output_root, job)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if not input_dir.exists():
+        raise FileNotFoundError(f"missing split directory: {input_dir}")
+
+    (
+        reference_video,
+        video_start,
+        video_end,
+        audio_input,
+        audio_start,
+        audio_end,
+        audio_output_name,
+    ) = resolve_job_timings(input_dir, job)
+
+    planned_video_outputs = {
+        suffix: str(output_dir / f"{job.prefix}_{suffix}.mp4")
+        for suffix in VIDEO_SUFFIXES
+        if (input_dir / f"{job.prefix}_{suffix}.mp4").exists()
+    }
+    record_path = output_dir / f"{job.prefix}_edit.json"
+    write_job_record(
+        record_path=record_path,
+        dataset_root=dataset_root,
+        job=job,
+        status="planned",
+        video_mode=video_mode,
+        dry_run=dry_run,
+        reference_video=reference_video,
+        video_start=video_start,
+        video_end=video_end,
+        audio_input=audio_input,
+        audio_start=audio_start,
+        audio_end=audio_end,
+        video_outputs=planned_video_outputs,
+        audio_output=(output_dir / audio_output_name) if audio_output_name is not None else None,
+    )
+
+
+def write_job_record(
+    record_path: Path,
+    dataset_root: Path,
+    job: Job,
+    status: str,
+    video_mode: str,
+    dry_run: bool,
+    reference_video: Path,
+    video_start: float,
+    video_end: float,
+    audio_input: Optional[Path],
+    audio_start: Optional[float],
+    audio_end: Optional[float],
+    video_outputs: dict[str, str],
+    audio_output: Optional[Path],
+) -> None:
+    record = {
+        "split_dir": job.split_dir,
+        "prefix": job.prefix,
+        "status": status,
+        "video_mode": video_mode,
+        "dry_run": dry_run,
+        "reference_video": str(reference_video),
+        "resolved": {
+            "video_start": format_timecode(video_start),
+            "video_end": format_timecode(video_end),
+            "audio_start": format_timecode(audio_start) if audio_start is not None else None,
+            "audio_end": format_timecode(audio_end) if audio_end is not None else None,
+            "video_duration_seconds": round(video_end - video_start, 3),
+            "audio_duration_seconds": (
+                round(audio_end - audio_start, 3)
+                if audio_start is not None and audio_end is not None
+                else None
+            ),
+        },
+        "original_config": {
+            "video_start": format_timecode(job.video_start) if job.video_start is not None else None,
+            "video_end": format_timecode(job.video_end) if job.video_end is not None else None,
+            "audio_start": format_timecode(job.audio_start) if job.audio_start is not None else None,
+            "audio_end": format_timecode(job.audio_end) if job.audio_end is not None else None,
+            "audio_offset_seconds": job.audio_offset,
+        },
+        "inputs": {
+            "videos": {
+                suffix: str((dataset_root / job.split_dir / f"{job.prefix}_{suffix}.mp4"))
+                for suffix in VIDEO_SUFFIXES
+                if (dataset_root / job.split_dir / f"{job.prefix}_{suffix}.mp4").exists()
+            },
+            "audio": str(audio_input) if audio_input is not None and audio_input.exists() else None,
+        },
+        "outputs": {
+            "videos": video_outputs,
+            "audio": str(audio_output) if audio_output is not None else None,
+        },
+    }
+    record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
 
 
 def trim_audio(
@@ -301,35 +443,55 @@ def process_job(
     video_mode: str,
     dry_run: bool,
 ) -> None:
-    input_dir = dataset_root / job.split_dir
-    output_dir = output_root / job.split_dir
+    input_dir, output_dir = resolve_job_paths(dataset_root, output_root, job)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if not input_dir.exists():
         raise FileNotFoundError(f"missing split directory: {input_dir}")
 
     print(f"\nProcessing {job.split_dir} / {job.prefix}")
-    reference_video = input_dir / f"{job.prefix}_rgb.mp4"
-    if not reference_video.exists():
-        for suffix in VIDEO_SUFFIXES:
-            candidate = input_dir / f"{job.prefix}_{suffix}.mp4"
-            if candidate.exists():
-                reference_video = candidate
-                break
-    if not reference_video.exists():
-        raise FileNotFoundError(f"missing reference video for {job.split_dir}/{job.prefix}")
+    (
+        reference_video,
+        video_start,
+        video_end,
+        audio_input,
+        audio_start,
+        audio_end,
+        audio_output_name,
+    ) = resolve_job_timings(input_dir, job)
+    audio_output = (output_dir / audio_output_name) if audio_output_name is not None else None
 
-    video_start = job.video_start if job.video_start is not None else 0.0
-    video_end = job.video_end if job.video_end is not None else probe_duration(reference_video)
-    if video_end <= video_start:
-        raise ValueError(f"{job.split_dir}/{job.prefix}: resolved video_end must be greater than video_start")
+    planned_video_outputs = {
+        suffix: str(output_dir / f"{job.prefix}_{suffix}.mp4")
+        for suffix in VIDEO_SUFFIXES
+        if (input_dir / f"{job.prefix}_{suffix}.mp4").exists()
+    }
+    record_path = output_dir / f"{job.prefix}_edit.json"
+    write_job_record(
+        record_path=record_path,
+        dataset_root=dataset_root,
+        job=job,
+        status="planned",
+        video_mode=video_mode,
+        dry_run=dry_run,
+        reference_video=reference_video,
+        video_start=video_start,
+        video_end=video_end,
+        audio_input=audio_input,
+        audio_start=audio_start,
+        audio_end=audio_end,
+        video_outputs=planned_video_outputs,
+        audio_output=audio_output,
+    )
 
+    video_outputs: dict[str, str] = {}
     for suffix in VIDEO_SUFFIXES:
         input_path = input_dir / f"{job.prefix}_{suffix}.mp4"
         if not input_path.exists():
             print(f"  skip missing video: {input_path.name}")
             continue
         output_path = output_dir / input_path.name
+        video_outputs[suffix] = str(output_path)
         trim_video(
             input_path=input_path,
             output_path=output_path,
@@ -339,18 +501,7 @@ def process_job(
             dry_run=dry_run,
         )
 
-    audio_input = input_dir / f"{job.prefix}.m4a"
     if audio_input.exists():
-        audio_output = output_dir / audio_input.name
-        audio_start = job.audio_start if job.audio_start is not None else 0.0
-        audio_end = job.audio_end if job.audio_end is not None else probe_duration(audio_input)
-        if job.audio_start is None and job.audio_end is None and job.audio_offset is not None:
-            audio_start = video_start + job.audio_offset
-            if audio_start < 0:
-                audio_start = 0.0
-            audio_end = audio_start + (video_end - video_start)
-        if audio_end <= audio_start:
-            raise ValueError(f"{job.split_dir}/{job.prefix}: resolved audio_end must be greater than audio_start")
         trim_audio(
             input_path=audio_input,
             output_path=audio_output,
@@ -363,6 +514,24 @@ def process_job(
         )
     else:
         print(f"  skip missing audio: {audio_input.name}")
+
+    write_job_record(
+        record_path=record_path,
+        dataset_root=dataset_root,
+        job=job,
+        status="completed",
+        video_mode=video_mode,
+        dry_run=dry_run,
+        reference_video=reference_video,
+        video_start=video_start,
+        video_end=video_end,
+        audio_input=audio_input,
+        audio_start=audio_start,
+        audio_end=audio_end,
+        video_outputs=video_outputs,
+        audio_output=audio_output,
+    )
+    print(f"  wrote record: {record_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -422,6 +591,14 @@ def main() -> int:
             output_root = args.output_root
             video_mode = args.video_mode
             dry_run = args.dry_run
+        for job in jobs:
+            write_planned_record(
+                dataset_root=dataset_root,
+                output_root=output_root,
+                job=job,
+                video_mode=video_mode,
+                dry_run=dry_run,
+            )
         for job in jobs:
             process_job(
                 dataset_root=dataset_root,
