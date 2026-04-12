@@ -4,6 +4,17 @@ realsensedvsense/
 # Ignore Recording Files
 dataset/
 
+cv_audio/
+
+backup/
+
+only_night/
+
+dataset_processed/
+
+.idea/
+
+
 # Ignore Python bytecode and cache directories
 camera_feature/__pycache__/
 
