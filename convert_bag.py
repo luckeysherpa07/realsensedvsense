@@ -10,14 +10,14 @@ import pyrealsense2 as rs
 from importlib.util import find_spec
 
 
-INPUT_DIR = Path("dataset/check_mailbox")
+INPUT_DIR = Path("dataset/drink_water")
 OUTPUT_ROOT = INPUT_DIR.parent / f"{INPUT_DIR.name}_split"
 OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 ENABLE_IMU = False
 FPS_FALLBACK = 30
 PROCESS_BAG = True
-PROCESS_EVENT = True
+PROCESS_EVENT = False
 SKIP_EXISTING = True
 
 
@@ -40,6 +40,42 @@ def ir_to_bgr(ir_image: np.ndarray) -> np.ndarray:
     else:
         ir_u8 = ir_image
     return cv2.cvtColor(ir_u8, cv2.COLOR_GRAY2BGR)
+
+
+def realsense_color_to_bgr(color_frame: rs.video_frame) -> np.ndarray:
+    color_image = np.asanyarray(color_frame.get_data())
+    color_format = color_frame.profile.format()
+
+    if color_format == rs.format.rgb8:
+        return cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR)
+
+    if color_format == rs.format.bgr8:
+        return color_image
+
+    if color_format == rs.format.rgba8:
+        return cv2.cvtColor(color_image, cv2.COLOR_RGBA2BGR)
+
+    if color_format == rs.format.bgra8:
+        return cv2.cvtColor(color_image, cv2.COLOR_BGRA2BGR)
+
+    if color_format == rs.format.yuyv:
+        return cv2.cvtColor(color_image, cv2.COLOR_YUV2BGR_YUY2)
+
+    if color_format == rs.format.y16:
+        return ir_to_bgr(color_image)
+
+    if color_image.ndim == 2:
+        return cv2.cvtColor(color_image, cv2.COLOR_GRAY2BGR)
+
+    if color_image.ndim == 3 and color_image.shape[2] == 4:
+        return cv2.cvtColor(color_image, cv2.COLOR_BGRA2BGR)
+
+    if color_image.ndim == 3 and color_image.shape[2] == 3:
+        # Unknown three-channel format. Keep the raw channel order rather than
+        # swapping channels blindly and risking another red/blue inversion.
+        return color_image
+
+    raise ValueError(f"Unsupported RealSense color format: {color_format}")
 
 
 def write_imu_csv(rows, csv_path: Path):
@@ -259,6 +295,7 @@ def convert_bag_file(bag_path: Path, sample_name: str):
     rgb_fps = FPS_FALLBACK
     depth_fps = FPS_FALLBACK
     ir_fps = FPS_FALLBACK
+    color_format = None
 
     try:
         active_profile = pipeline.get_active_profile()
@@ -268,6 +305,7 @@ def convert_bag_file(bag_path: Path, sample_name: str):
                 vsp = sp.as_video_stream_profile()
                 color_size = (vsp.width(), vsp.height())
                 rgb_fps = safe_get_fps(vsp, FPS_FALLBACK)
+                color_format = sp.format()
             elif sp.stream_type() == rs.stream.depth:
                 vsp = sp.as_video_stream_profile()
                 depth_size = (vsp.width(), vsp.height())
@@ -278,6 +316,7 @@ def convert_bag_file(bag_path: Path, sample_name: str):
                 ir_fps = safe_get_fps(vsp, FPS_FALLBACK)
 
         if color_size:
+            print(f"[INFO] {bag_path.name}: detected color stream format = {color_format}")
             rgb_writer = cv2.VideoWriter(
                 str(rgb_mp4), cv2.VideoWriter_fourcc(*"mp4v"), rgb_fps, color_size
             )
@@ -308,11 +347,7 @@ def convert_bag_file(bag_path: Path, sample_name: str):
                 pass
 
             if color_frame and rgb_writer is not None:
-                color_image = np.asanyarray(color_frame.get_data())
-                if color_image.ndim == 3 and color_image.shape[2] == 3:
-                    color_bgr = cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR)
-                else:
-                    color_bgr = color_image
+                color_bgr = realsense_color_to_bgr(color_frame)
                 rgb_writer.write(color_bgr)
 
             if depth_frame and depth_writer is not None:

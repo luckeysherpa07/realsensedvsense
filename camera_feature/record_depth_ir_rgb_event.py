@@ -58,7 +58,7 @@ def realsense_recorder_thread(bag_path, stop_event, error_event):
 
     # Configure Streams
     # Note: Ensure your USB connection supports this bandwidth.
-    cfg.enable_stream(rs.stream.color, RS_WIDTH, RS_HEIGHT, rs.format.bgr8, RS_FPS)
+    cfg.enable_stream(rs.stream.color, RS_WIDTH, RS_HEIGHT, rs.format.rgb8, RS_FPS)
     cfg.enable_stream(rs.stream.depth, RS_WIDTH, RS_HEIGHT, rs.format.z16, RS_FPS)
     # IR Index 1 is usually the Left IR camera (aligned with depth origin)
     cfg.enable_stream(rs.stream.infrared, 1, RS_WIDTH, RS_HEIGHT, rs.format.y8, RS_FPS)
@@ -70,6 +70,7 @@ def realsense_recorder_thread(bag_path, stop_event, error_event):
         # Start pipeline and get the active profile
         pipeline_profile = pipe.start(cfg)
         print(f"🎥 RealSense started -> {bag_path}")
+        print("🎨 RealSense color stream requested as rgb8")
 
         # --- DISABLE IR EMITTER ---
         # This removes the dot pattern that confuses the Event Camera
