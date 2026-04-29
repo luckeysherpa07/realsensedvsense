@@ -1,0 +1,2 @@
+## 1. synchronization
+1. make some specific sounds like clapping, tapping, or saying a specific word at the beginning of the recording. This can help you identify the start of the recording and synchronize it with other data sources. We can also do the same thing at the end of the recording to mark the end point.
