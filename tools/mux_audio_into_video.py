@@ -7,9 +7,9 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_VIDEO = PROJECT_ROOT / "dataset_processed" / "wash_hands_split" / "wash_hands_day_rgb.mp4"
-DEFAULT_AUDIO = PROJECT_ROOT / "dataset_processed" / "wash_hands_split" / "wash_hands_day.m4a"
-DEFAULT_OUTPUT = PROJECT_ROOT / "dataset_processed" / "wash_hands_split" / "wash_hands_day_rgb_with_audio.mp4"
+DEFAULT_VIDEO = PROJECT_ROOT / "dataset_processed" / "check_mailbox_split" / "check_mailbox_day_rgb.mp4"
+DEFAULT_AUDIO = PROJECT_ROOT / "dataset_processed" / "check_mailbox_split" / "check_mailbox_day.m4a"
+DEFAULT_OUTPUT = PROJECT_ROOT / "dataset_processed" / "check_mailbox_split" / "check_mailbox_day_rgb_with_audio.mp4"
 
 
 def run_command(cmd: list[str], dry_run: bool) -> subprocess.CompletedProcess[str] | None:
@@ -113,10 +113,13 @@ def main() -> int:
 
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    if output.exists() and not args.overwrite:
+    if output.exists() and not args.overwrite and not args.dry_run:
         print(f"Error: output already exists: {output}", file=sys.stderr)
         print("Use --overwrite to replace it.", file=sys.stderr)
         return 1
+
+    if output.exists() and args.dry_run and not args.overwrite:
+        print(f"Notice: output already exists and would be overwritten: {output}")
 
     try:
         video_duration = probe_duration(video, args.ffprobe_bin)
@@ -131,8 +134,6 @@ def main() -> int:
             out_duration = probe_duration(output, args.ffprobe_bin)
             print(f"Output duration: {out_duration:.3f}s")
             print("Verification passed: output has both video and audio streams.")
-        elif args.dry_run:
-            print("Dry-run completed.")
     except subprocess.CalledProcessError as exc:
         print(exc.stderr or str(exc), file=sys.stderr)
         return 1
@@ -140,7 +141,10 @@ def main() -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Done: {output}")
+    if args.dry_run:
+        print(f"Dry-run completed. Planned output: {output}")
+    else:
+        print(f"Done: {output}")
     return 0
 
 
